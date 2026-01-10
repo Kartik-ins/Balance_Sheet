@@ -27,17 +27,24 @@ class ExplanationService:
     def __init__(self):
         self.logger = structlog.get_logger().bind(service="explanation")
         self.settings = get_settings()
-        self._openai_client = None
+        self._openrouter_client = None
     
-    def _get_openai_client(self):
-        """Lazy-load OpenAI client."""
-        if self._openai_client is None and self.settings.openai_api_key:
+    def _get_openrouter_client(self):
+        """Lazy-load OpenRouter client (uses OpenAI SDK with custom base URL)."""
+        if self._openrouter_client is None and self.settings.openrouter_api_key:
             try:
                 from openai import OpenAI
-                self._openai_client = OpenAI(api_key=self.settings.openai_api_key)
+                self._openrouter_client = OpenAI(
+                    api_key=self.settings.openrouter_api_key,
+                    base_url=self.settings.openrouter_base_url,
+                    default_headers={
+                        "HTTP-Referer": "https://github.com/Kartik-ins/Balance_Sheet",
+                        "X-Title": "Financial Assurance Platform"
+                    }
+                )
             except ImportError:
-                self.logger.warning("openai_not_installed")
-        return self._openai_client
+                self.logger.warning("openai_sdk_not_installed")
+        return self._openrouter_client
     
     def generate_decision_explanation(
         self,
@@ -63,8 +70,8 @@ class ExplanationService:
         # Build explanation from evidence
         explanation = self._build_decision_explanation(decision_dict, evidence)
         
-        # Optionally enhance with LLM
-        if self._get_openai_client():
+        # Optionally enhance with LLM via OpenRouter
+        if self._get_openrouter_client():
             explanation = self._enhance_with_llm(explanation, "decision")
         
         return explanation
@@ -82,7 +89,7 @@ class ExplanationService:
         
         explanation = self._build_variance_explanation(variance_dict, account_name)
         
-        if self._get_openai_client():
+        if self._get_openrouter_client():
             explanation = self._enhance_with_llm(explanation, "variance")
         
         return explanation
@@ -262,8 +269,8 @@ class ExplanationService:
         }
     
     def _enhance_with_llm(self, explanation: dict, context_type: str) -> dict:
-        """Enhance explanation using LLM."""
-        client = self._get_openai_client()
+        """Enhance explanation using LLM via OpenRouter."""
+        client = self._get_openrouter_client()
         if not client:
             return explanation
         
@@ -282,7 +289,7 @@ Data:
 Provide a 2-3 sentence summary that a finance professional would understand."""
             
             response = client.chat.completions.create(
-                model=self.settings.openai_model,
+                model=self.settings.openrouter_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

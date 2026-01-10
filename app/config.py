@@ -17,9 +17,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/assurance.db"
     
-    # OpenAI
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    # OpenRouter API (https://openrouter.ai)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "google/gemma-3-27b-it:free"  # Free Gemma 3 model
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     
     # Agent Thresholds
     auto_approve_confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
