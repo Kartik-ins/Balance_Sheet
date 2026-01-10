@@ -1,0 +1,47 @@
+"""
+Application Configuration
+"""
+from functools import lru_cache
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+    
+    # Application
+    app_name: str = "Financial Assurance Platform"
+    app_env: str = "development"
+    debug: bool = True
+    
+    # Database
+    database_url: str = "sqlite+aiosqlite:///./data/assurance.db"
+    
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    
+    # Agent Thresholds
+    auto_approve_confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    escalation_risk_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    variance_zscore_threshold: float = Field(default=2.5, ge=0.0)
+    variance_percent_threshold: float = Field(default=0.25, ge=0.0)
+    
+    # Materiality Thresholds
+    materiality_high_threshold: float = 1_000_000
+    materiality_medium_threshold: float = 100_000
+    materiality_low_threshold: float = 10_000
+    
+    # Logging
+    log_level: str = "INFO"
+    log_format: str = "json"
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()

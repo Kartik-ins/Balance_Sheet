@@ -1,0 +1,45 @@
+account_code,account_name,account_type,debit,credit
+1010,Cash and Cash Equivalents,asset,2500000,0
+1020,Accounts Receivable,asset,1850000,0
+1030,Inventory,asset,3200000,0
+1040,Prepaid Expenses,asset,125000,0
+1050,Short-term Investments,asset,500000,0
+1510,Property Plant and Equipment,asset,8500000,0
+1520,Accumulated Depreciation,contra,0,2100000
+1530,Intangible Assets,asset,750000,0
+1540,Goodwill,asset,1200000,0
+2010,Accounts Payable,liability,0,1450000
+2020,Accrued Expenses,liability,0,320000
+2030,Short-term Debt,liability,0,500000
+2040,Deferred Revenue,liability,0,180000
+2050,Income Tax Payable,liability,0,95000
+2510,Long-term Debt,liability,0,3500000
+2520,Deferred Tax Liability,liability,0,425000
+2530,Other Long-term Liabilities,liability,0,150000
+3010,Common Stock,equity,0,1000000
+3020,Additional Paid-in Capital,equity,0,2500000
+3030,Retained Earnings,equity,0,5200000
+3040,Treasury Stock,equity,350000,0
+3050,Accumulated Other Comprehensive Income,equity,0,55000
+4010,Product Revenue,revenue,0,12500000
+4020,Service Revenue,revenue,0,3200000
+4030,Other Revenue,revenue,0,450000
+5010,Cost of Goods Sold,expense,8750000,0
+5020,Cost of Services,expense,1920000,0
+6010,Salaries and Wages,expense,2100000,0
+6020,Employee Benefits,expense,420000,0
+6030,Rent Expense,expense,360000,0
+6040,Utilities Expense,expense,85000,0
+6050,Insurance Expense,expense,120000,0
+6060,Depreciation Expense,expense,425000,0
+6070,Amortization Expense,expense,75000,0
+6080,Professional Services,expense,210000,0
+6090,Marketing and Advertising,expense,380000,0
+6100,Travel and Entertainment,expense,95000,0
+6110,Office Supplies,expense,45000,0
+6120,Telecommunications,expense,65000,0
+7010,Interest Expense,expense,175000,0
+7020,Interest Income,revenue,0,35000
+7030,Other Income,revenue,0,25000
+7040,Other Expenses,expense,55000,0
+8010,Income Tax Expense,expense,485000,0
