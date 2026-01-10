@@ -37,9 +37,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"
     
+    # Redis (optional - for task queue)
+    redis_url: str = "redis://localhost:6379/0"
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra env vars
 
 
 @lru_cache
