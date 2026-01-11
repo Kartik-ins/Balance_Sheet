@@ -696,10 +696,11 @@ def render_decisions_tab():
             st.write("**Rationale:**")
             st.info(rationale)
             
-            # Evidence
+            # Evidence (show as collapsible details without nested expander)
             evidence = decision.get("evidence_pack", {})
             if evidence:
-                with st.expander("📋 View Evidence"):
+                st.write("**📋 Evidence:**")
+                with st.container():
                     st.json(evidence)
             
             # Feedback form (only for escalated/pending)
