@@ -1,8 +1,14 @@
 """
-Learning Agent
-==============
+Learning Agent (Agentic AI)
+===========================
 Observes human overrides and feedback to continuously refine
 validation rules, thresholds, and decision logic.
+
+AGENTIC FEATURES:
+- AI-powered pattern analysis
+- Self-improving threshold recommendations
+- Broadcasts learning insights to other agents
+- Maintains long-term memory of patterns
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -10,16 +16,22 @@ from typing import Any, Optional
 from collections import defaultdict
 import numpy as np
 
-from app.agents.base import BaseAgent
+from app.agents.agentic_base import AgenticBase, AgentCapability
 from app.models import (
     AgentType, Decision, DecisionAction, Feedback, FeedbackType
 )
 from app.config import get_settings
 
 
-class LearningAgent(BaseAgent):
+class LearningAgent(AgenticBase):
     """
-    Autonomous agent for learning from human feedback.
+    AGENTIC Learning Agent.
+    
+    Agentic Capabilities:
+    - Uses LLM to analyze feedback patterns
+    - Generates AI-powered improvement suggestions
+    - Broadcasts insights to other agents
+    - Self-reflects on learning effectiveness
     
     Responsibilities:
     - Collect and analyze human override patterns
@@ -30,13 +42,31 @@ class LearningAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__(AgentType.LEARNING)
+        super().__init__(
+            AgentType.LEARNING,
+            capabilities=[
+                AgentCapability.REASONING,
+                AgentCapability.LEARNING,
+                AgentCapability.MEMORY,
+                AgentCapability.COMMUNICATION,
+                AgentCapability.REFLECTION
+            ]
+        )
         self.settings = get_settings()
         
         # In-memory storage for learning data (backed by DB)
         self.feedback_history: list[dict] = []
         self.decision_outcomes: dict[str, list[dict]] = defaultdict(list)
         self.threshold_suggestions: dict[str, float] = {}
+        
+        # Agentic goals
+        self.add_goal("Learn from human feedback to improve accuracy", priority=0.9)
+        self.add_goal("Reduce override rate over time", priority=0.8)
+        self.add_goal("Identify systematic decision errors", priority=0.85)
+        
+        # Initialize beliefs
+        self.update_belief("current_accuracy", 0.0, confidence=0.5)
+        self.update_belief("learning_rate", 0.1, confidence=0.7)
         
         # Load from database on init
         self._load_from_db()
@@ -405,3 +435,161 @@ class LearningAgent(BaseAgent):
             event_type="learning_reset",
             payload={"reason": "manual_reset"}
         )
+
+    async def generate_ai_insights(self) -> dict:
+        """
+        Use LLM to analyze feedback patterns and generate actionable insights.
+        This is the AGENTIC AI feature.
+        """
+        metrics = self._calculate_metrics()
+        
+        if metrics["total_feedback"] == 0:
+            return {
+                "insights": "Not enough feedback data to generate insights.",
+                "recommendations": [],
+                "confidence": 0.0
+            }
+        
+        # Analyze override patterns
+        override_by_type = defaultdict(int)
+        for fb in self.feedback_history:
+            if fb.get("was_override"):
+                original = fb.get("original_action", "unknown")
+                override_by_type[original] += 1
+        
+        prompt = f"""You are an AI learning agent analyzing feedback patterns for a financial audit system.
+
+FEEDBACK METRICS:
+- Total feedback received: {metrics['total_feedback']}
+- Override rate: {metrics['override_rate']*100:.1f}%
+- Agreement rate: {metrics['agreement_rate']*100:.1f}%
+- Estimated accuracy: {metrics['accuracy_estimate']*100:.1f}%
+
+OVERRIDE PATTERNS BY ORIGINAL DECISION:
+{self._format_override_patterns(override_by_type)}
+
+CURRENT THRESHOLD SUGGESTIONS:
+{self.threshold_suggestions}
+
+As an AI learning agent, analyze these patterns and provide:
+1. KEY INSIGHT: What's the main learning from this data?
+2. ROOT CAUSE: Why are overrides happening?
+3. RECOMMENDATIONS: 2-3 specific changes to improve accuracy
+4. CONFIDENCE: How confident are you in these insights? (0-100%)
+
+Be specific and actionable.
+"""
+        
+        response = await self._call_llm(prompt, temperature=0.5)
+        
+        # Parse the response
+        insights = {
+            "raw_analysis": response,
+            "override_rate": metrics["override_rate"],
+            "accuracy": metrics["accuracy_estimate"],
+            "recommendations": self._extract_recommendations(response),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Update beliefs based on learning
+        self.update_belief("current_accuracy", metrics["accuracy_estimate"], confidence=0.8)
+        self.update_belief("override_rate", metrics["override_rate"], confidence=0.9)
+        
+        # Remember this analysis
+        self.remember({
+            "type": "ai_learning_analysis",
+            "accuracy": metrics["accuracy_estimate"],
+            "override_rate": metrics["override_rate"]
+        }, importance=0.8)
+        
+        # Broadcast insights to other agents
+        self.broadcast_message(
+            message_type="learning_update",
+            content={
+                "accuracy": metrics["accuracy_estimate"],
+                "override_rate": metrics["override_rate"],
+                "suggestions": list(self.threshold_suggestions.keys())
+            },
+            priority=0.6
+        )
+        
+        return insights
+    
+    def _format_override_patterns(self, patterns: dict) -> str:
+        """Format override patterns for AI prompt."""
+        if not patterns:
+            return "No override patterns recorded yet."
+        
+        lines = []
+        for action, count in patterns.items():
+            lines.append(f"- {action}: {count} overrides")
+        return "\n".join(lines)
+    
+    def _extract_recommendations(self, ai_response: str) -> list[str]:
+        """Extract recommendations from AI response."""
+        recommendations = []
+        lines = ai_response.split("\n")
+        
+        in_recommendations = False
+        for line in lines:
+            line_lower = line.lower()
+            if "recommendation" in line_lower:
+                in_recommendations = True
+                continue
+            if in_recommendations and line.strip().startswith(("-", "•", "*", "1", "2", "3")):
+                rec = line.strip().lstrip("-•*123456789. ")
+                if rec:
+                    recommendations.append(rec)
+            if in_recommendations and line.strip() == "":
+                in_recommendations = False
+        
+        return recommendations[:5]  # Max 5 recommendations
+    
+    async def self_improve(self) -> dict:
+        """
+        Agentic self-improvement: reflect on learning effectiveness
+        and adjust learning strategies.
+        """
+        # Get current state
+        metrics = self._calculate_metrics()
+        
+        prompt = f"""As an AI learning agent, reflect on your learning effectiveness.
+
+YOUR GOALS:
+1. Reduce override rate (currently {metrics['override_rate']*100:.1f}%)
+2. Improve accuracy (currently {metrics['accuracy_estimate']*100:.1f}% estimated)
+3. Provide better threshold suggestions
+
+YOUR CURRENT SUGGESTIONS:
+{self.threshold_suggestions}
+
+RECENT FEEDBACK COUNT: {metrics['total_feedback']}
+
+Questions to answer:
+1. Are your threshold suggestions being effective?
+2. What should you learn faster/slower?
+3. What patterns are you missing?
+4. How can you improve your learning strategy?
+
+Provide specific, actionable self-improvement suggestions.
+"""
+        
+        reflection = await self._call_llm(prompt, temperature=0.7)
+        
+        # Store reflection
+        self.reflection_insights.append({
+            "timestamp": datetime.utcnow().isoformat(),
+            "reflection": reflection,
+            "metrics_at_time": metrics
+        })
+        
+        # Update performance metrics
+        self.performance_metrics["accuracy"] = metrics["accuracy_estimate"] or 0
+        self.performance_metrics["override_rate"] = metrics["override_rate"]
+        self.performance_metrics["learning_cycles"] = len(self.reflection_insights)
+        
+        return {
+            "reflection": reflection,
+            "metrics": metrics,
+            "improvement_cycle": len(self.reflection_insights)
+        }

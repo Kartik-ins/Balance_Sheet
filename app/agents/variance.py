@@ -1,8 +1,14 @@
 """
-Variance Reasoning Agent
-========================
+Variance Reasoning Agent (Agentic AI)
+======================================
 Analyzes period-over-period changes, detects abnormal deviations,
 and generates natural-language explanations using historical trends.
+
+AGENTIC FEATURES:
+- AI-powered explanation of variances
+- Goal-driven anomaly detection
+- Memory of historical patterns
+- Inter-agent communication of anomalies
 """
 from datetime import datetime
 from decimal import Decimal
@@ -10,7 +16,7 @@ from typing import Any, Optional
 import numpy as np
 from scipy import stats
 
-from app.agents.base import BaseAgent
+from app.agents.agentic_base import AgenticBase, AgentCapability
 from app.models import (
     AgentType, Balance, Finding, FindingType, 
     MaterialityBand, VarianceAnalysis
@@ -18,9 +24,15 @@ from app.models import (
 from app.config import get_settings
 
 
-class VarianceReasoningAgent(BaseAgent):
+class VarianceReasoningAgent(AgenticBase):
     """
-    Autonomous agent for variance analysis and anomaly detection.
+    AGENTIC Variance Analysis Agent.
+    
+    Agentic Capabilities:
+    - Uses LLM to explain variances in business terms
+    - Remembers patterns across periods
+    - Alerts decision agent about anomalies
+    - Self-reflects on detection accuracy
     
     Performs:
     - Period-over-period variance calculation
@@ -31,8 +43,25 @@ class VarianceReasoningAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__(AgentType.VARIANCE)
+        super().__init__(
+            AgentType.VARIANCE,
+            capabilities=[
+                AgentCapability.REASONING,
+                AgentCapability.MEMORY,
+                AgentCapability.COMMUNICATION,
+                AgentCapability.REFLECTION
+            ]
+        )
         self.settings = get_settings()
+        
+        # Agentic goals
+        self.add_goal("Detect all significant variances accurately", priority=0.9)
+        self.add_goal("Minimize false positive anomalies", priority=0.7)
+        self.add_goal("Provide actionable explanations for variances", priority=0.8)
+        
+        # Initialize beliefs
+        self.update_belief("zscore_threshold", self.settings.variance_zscore_threshold, confidence=0.9)
+        self.update_belief("percent_threshold", self.settings.variance_percent_threshold, confidence=0.9)
     
     def validate_input(self, context: dict[str, Any]) -> bool:
         """Validate that required inputs are present."""
@@ -411,3 +440,133 @@ class VarianceReasoningAgent(BaseAgent):
             }
             for a in sorted_analyses[:n]
         ]
+
+    async def _generate_ai_explanation(
+        self,
+        account_name: str,
+        account_type: str,
+        current_amount: float,
+        prior_amount: float,
+        percent_variance: float,
+        zscore: Optional[float],
+        is_anomaly: bool
+    ) -> str:
+        """
+        Use LLM to generate a business-context explanation for the variance.
+        This is the AGENTIC AI feature.
+        """
+        direction = "increased" if current_amount > prior_amount else "decreased"
+        abs_change = abs(current_amount - prior_amount)
+        
+        prompt = f"""You are an AI financial analyst explaining a variance to an auditor.
+
+ACCOUNT: {account_name}
+TYPE: {account_type}
+CHANGE: {direction} from ${prior_amount:,.2f} to ${current_amount:,.2f}
+ABSOLUTE CHANGE: ${abs_change:,.2f}
+PERCENT CHANGE: {percent_variance*100:.1f}%
+Z-SCORE: {zscore:.2f if zscore else 'N/A'}
+ANOMALY DETECTED: {'YES' if is_anomaly else 'No'}
+
+Based on the account type and change, suggest 2-3 possible business reasons for this variance.
+Be specific and practical. Keep your response to 2-3 sentences.
+"""
+        
+        explanation = await self._call_llm(prompt, temperature=0.6)
+        
+        # Remember this pattern
+        self.remember({
+            "type": "variance_explanation",
+            "account_type": account_type,
+            "direction": direction,
+            "percent_change": percent_variance,
+            "is_anomaly": is_anomaly
+        }, importance=0.6 if is_anomaly else 0.3)
+        
+        # If anomaly, alert decision agent
+        if is_anomaly:
+            self.send_message(
+                receiver="decision",
+                message_type="anomaly_alert",
+                content={
+                    "account": account_name,
+                    "percent_variance": percent_variance,
+                    "zscore": zscore,
+                    "explanation": explanation[:200]
+                },
+                priority=0.8
+            )
+        
+        return explanation
+    
+    async def analyze_variance_patterns(self, analyses: list[VarianceAnalysis]) -> dict:
+        """
+        Agentic pattern analysis across all variances.
+        Uses AI to identify trends and systemic issues.
+        """
+        if not analyses:
+            return {"patterns": [], "insights": "No data to analyze"}
+        
+        # Aggregate by direction
+        increases = [a for a in analyses if a.absolute_variance > 0]
+        decreases = [a for a in analyses if a.absolute_variance < 0]
+        anomalies = [a for a in analyses if a.is_anomaly]
+        
+        # Calculate totals
+        total_increase = sum(float(a.absolute_variance) for a in increases)
+        total_decrease = sum(float(abs(a.absolute_variance)) for a in decreases)
+        
+        prompt = f"""Analyze these variance patterns for an audit review:
+
+SUMMARY:
+- Total accounts analyzed: {len(analyses)}
+- Accounts with increases: {len(increases)} (total +${total_increase:,.0f})
+- Accounts with decreases: {len(decreases)} (total -${total_decrease:,.0f})
+- Anomalies detected: {len(anomalies)}
+
+TOP ANOMALIES:
+{self._format_top_anomalies(anomalies[:5])}
+
+As an AI auditor, identify:
+1. Any concerning patterns
+2. Potential explanations for the overall trend
+3. Recommendations for the audit team
+
+Keep response concise (3-4 sentences).
+"""
+        
+        insights = await self._call_llm(prompt, temperature=0.5)
+        
+        # Update beliefs
+        self.update_belief("anomaly_rate", len(anomalies) / len(analyses) if analyses else 0, confidence=0.9)
+        self.update_belief("net_variance_direction", "increase" if total_increase > total_decrease else "decrease", confidence=0.8)
+        
+        # Reflect and store
+        self.remember({
+            "type": "pattern_analysis",
+            "anomaly_count": len(anomalies),
+            "total_analyzed": len(analyses)
+        }, importance=0.7)
+        
+        return {
+            "patterns": {
+                "increases": len(increases),
+                "decreases": len(decreases),
+                "anomalies": len(anomalies),
+                "total_increase": total_increase,
+                "total_decrease": total_decrease
+            },
+            "ai_insights": insights,
+            "anomaly_rate": len(anomalies) / len(analyses) if analyses else 0
+        }
+    
+    def _format_top_anomalies(self, anomalies: list) -> str:
+        """Format top anomalies for AI prompt."""
+        if not anomalies:
+            return "None"
+        
+        lines = []
+        for a in anomalies[:5]:
+            pct = a.percent_variance * 100 if a.percent_variance else 0
+            lines.append(f"- Account {a.account_id}: {pct:+.1f}% (z-score: {a.zscore:.2f if a.zscore else 'N/A'})")
+        return "\n".join(lines)

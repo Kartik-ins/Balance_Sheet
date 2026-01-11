@@ -1,15 +1,21 @@
 """
-Validation Agent
-================
+Validation Agent (Agentic AI)
+=============================
 Performs comprehensive financial data validation including zero-balance checks,
 GL hygiene, classification consistency, and structural integrity validation.
+
+AGENTIC FEATURES:
+- AI-powered explanation of validation failures
+- Goal-driven validation prioritization
+- Memory of past validation patterns
+- Communicates findings to decision agent
 """
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 import structlog
 
-from app.agents.base import BaseAgent
+from app.agents.agentic_base import AgenticBase, AgentCapability
 from app.models import (
     AgentType, AccountType, Balance, Finding, FindingType,
     TrialBalance, ValidationResult, ValidationStatus
@@ -17,9 +23,15 @@ from app.models import (
 from app.config import get_settings
 
 
-class ValidationAgent(BaseAgent):
+class ValidationAgent(AgenticBase):
     """
-    Autonomous agent for financial data validation.
+    AGENTIC Validation Agent.
+    
+    Agentic Capabilities:
+    - Uses LLM to explain validation failures
+    - Prioritizes checks based on risk
+    - Remembers common failure patterns
+    - Alerts other agents about critical issues
     
     Performs:
     - Zero-balance (debit/credit) validation
@@ -40,8 +52,23 @@ class ValidationAgent(BaseAgent):
     }
     
     def __init__(self):
-        super().__init__(AgentType.VALIDATION)
+        super().__init__(
+            AgentType.VALIDATION,
+            capabilities=[
+                AgentCapability.REASONING,
+                AgentCapability.MEMORY,
+                AgentCapability.COMMUNICATION
+            ]
+        )
         self.settings = get_settings()
+        
+        # Agentic goals
+        self.add_goal("Detect all data quality issues", priority=0.9)
+        self.add_goal("Minimize false positive validations", priority=0.7)
+        self.add_goal("Provide clear explanations for failures", priority=0.8)
+        
+        # Initialize beliefs
+        self.update_belief("data_quality", "unknown", confidence=0.5)
     
     def validate_input(self, context: dict[str, Any]) -> bool:
         """Validate that required inputs are present."""

@@ -1,15 +1,22 @@
 """
-Decision Agent
-==============
+Decision Agent (Agentic AI)
+===========================
 Assigns confidence and risk scores to each financial line item
 and determines whether it can be auto-approved or must be escalated.
+
+AGENTIC FEATURES:
+- Goal-driven decision making
+- AI-powered reasoning for each decision
+- Inter-agent communication
+- Self-reflection and learning
+- Memory of past decisions
 """
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 import numpy as np
 
-from app.agents.base import BaseAgent
+from app.agents.agentic_base import AgenticBase, AgentCapability, Goal
 from app.models import (
     AgentType, Balance, Decision, DecisionAction, EvidencePack,
     Finding, FindingType, MaterialityBand, RiskScore,
@@ -18,9 +25,16 @@ from app.models import (
 from app.config import get_settings
 
 
-class DecisionAgent(BaseAgent):
+class DecisionAgent(AgenticBase):
     """
-    Autonomous agent for making approval/escalation decisions.
+    AGENTIC Decision Agent for making approval/escalation decisions.
+    
+    Agentic Capabilities:
+    - Uses LLM to reason about each decision
+    - Maintains beliefs about risk levels
+    - Communicates with other agents
+    - Reflects on decision patterns
+    - Learns from feedback
     
     Responsibilities:
     - Aggregate signals from validation and variance agents
@@ -40,9 +54,27 @@ class DecisionAgent(BaseAgent):
     }
     
     def __init__(self):
-        super().__init__(AgentType.DECISION)
+        super().__init__(
+            AgentType.DECISION,
+            capabilities=[
+                AgentCapability.REASONING,
+                AgentCapability.LEARNING,
+                AgentCapability.COMMUNICATION,
+                AgentCapability.MEMORY,
+                AgentCapability.REFLECTION
+            ]
+        )
         self.settings = get_settings()
-        self.policy_version = "v1.0"
+        self.policy_version = "v2.0-agentic"
+        
+        # Agentic goals
+        self.add_goal("Maximize accuracy of approval decisions", priority=0.9)
+        self.add_goal("Minimize false positives (unnecessary escalations)", priority=0.7)
+        self.add_goal("Ensure all high-risk items are escalated", priority=0.95)
+        
+        # Initialize beliefs
+        self.update_belief("default_risk_threshold", 0.7, confidence=0.8)
+        self.update_belief("conservative_mode", False, confidence=0.9)
     
     def validate_input(self, context: dict[str, Any]) -> bool:
         """Validate that required inputs are present."""
@@ -482,3 +514,201 @@ class DecisionAgent(BaseAgent):
                 f"Pending review: Risk score ({risk:.2f}) or confidence ({confidence:.2f}) "
                 f"requires human verification before approval."
             )
+
+    async def _get_ai_reasoning(
+        self,
+        account: dict,
+        risk_score: RiskScore,
+        variance: Optional[dict],
+        validation_issues: list[dict],
+        findings: list[dict]
+    ) -> dict:
+        """
+        Use LLM to reason about the decision - TRUE AGENTIC AI.
+        
+        The AI considers all factors and provides:
+        - Recommended action
+        - Confidence level
+        - Detailed reasoning
+        - Risk factors identified
+        """
+        account_name = account.get("name", account.get("account_name", "Unknown"))
+        account_type = account.get("account_type", "Unknown")
+        
+        prompt = f"""You are an autonomous AI auditor agent making a decision about a financial account.
+
+ACCOUNT: {account_name} (Type: {account_type})
+
+RISK ANALYSIS:
+- Overall Risk Score: {risk_score.overall_risk:.2f}
+- Confidence: {risk_score.confidence:.2f}
+- Risk Components: {risk_score.components}
+
+VARIANCE DATA:
+{self._format_variance_for_ai(variance) if variance else "No prior period data available"}
+
+VALIDATION ISSUES:
+{self._format_validation_for_ai(validation_issues)}
+
+FINDINGS:
+{self._format_findings_for_ai(findings)}
+
+YOUR GOALS:
+1. Maximize accuracy - don't approve truly risky items
+2. Minimize unnecessary escalations - don't escalate low-risk items
+3. Ensure all anomalies get human review
+
+Based on this evidence, what is your decision?
+
+Respond in this exact format:
+DECISION: [AUTO_APPROVE or ESCALATE or PENDING_REVIEW]
+CONFIDENCE: [0.0 to 1.0]
+KEY_FACTORS: [list the top 2-3 factors that drove your decision]
+REASONING: [2-3 sentences explaining your decision]
+"""
+        
+        response = await self._call_llm(prompt, temperature=0.3)
+        
+        # Parse response
+        result = {
+            "decision": "PENDING_REVIEW",
+            "confidence": 0.5,
+            "key_factors": [],
+            "reasoning": response,
+            "raw_response": response
+        }
+        
+        lines = response.split('\n')
+        for line in lines:
+            line_upper = line.upper()
+            if line_upper.startswith("DECISION:"):
+                decision_text = line.split(":", 1)[1].strip().upper()
+                if "AUTO" in decision_text or "APPROVE" in decision_text:
+                    result["decision"] = "AUTO_APPROVED"
+                elif "ESCALATE" in decision_text:
+                    result["decision"] = "ESCALATED"
+                else:
+                    result["decision"] = "PENDING_REVIEW"
+            elif line_upper.startswith("CONFIDENCE:"):
+                try:
+                    result["confidence"] = float(line.split(":", 1)[1].strip())
+                except:
+                    pass
+            elif line_upper.startswith("KEY_FACTORS:"):
+                result["key_factors"] = line.split(":", 1)[1].strip()
+            elif line_upper.startswith("REASONING:"):
+                result["reasoning"] = line.split(":", 1)[1].strip()
+        
+        # Remember this reasoning for learning
+        self.remember({
+            "type": "ai_reasoning",
+            "account": account_name,
+            "decision": result["decision"],
+            "confidence": result["confidence"]
+        }, importance=0.7)
+        
+        # Update beliefs based on AI analysis
+        if result["confidence"] > 0.8:
+            self.update_belief(
+                f"high_confidence_decision_{account_name[:20]}",
+                result["decision"],
+                confidence=result["confidence"]
+            )
+        
+        return result
+    
+    def _format_variance_for_ai(self, variance: dict) -> str:
+        """Format variance data for AI prompt."""
+        pct = variance.get("percent_variance", 0)
+        zscore = variance.get("zscore", 0)
+        is_anomaly = variance.get("is_anomaly", False)
+        
+        return f"""- Percent Change: {pct*100:.1f}%
+- Z-Score: {zscore:.2f}
+- Is Anomaly: {"YES ⚠️" if is_anomaly else "No"}
+- Prior Amount: ${variance.get('prior_amount', 0):,.2f}
+- Current Amount: ${variance.get('current_amount', 0):,.2f}"""
+    
+    def _format_validation_for_ai(self, issues: list) -> str:
+        """Format validation issues for AI prompt."""
+        if not issues:
+            return "No validation issues found ✓"
+        
+        return "\n".join([
+            f"- {v.get('check_name', 'Unknown')}: {v.get('status', 'unknown')} - {v.get('message', '')}"
+            for v in issues[:5]
+        ])
+    
+    def _format_findings_for_ai(self, findings: list) -> str:
+        """Format findings for AI prompt."""
+        if not findings:
+            return "No findings"
+        
+        return "\n".join([
+            f"- {f.get('finding_type', 'Unknown')}: Severity {f.get('severity', 0):.1f}"
+            for f in findings[:5]
+        ])
+    
+    async def reflect_on_decisions(self, decisions: list) -> str:
+        """
+        Agentic self-reflection on recent decisions.
+        
+        Analyzes patterns in decisions made and suggests improvements.
+        Accepts both Decision objects and dictionaries.
+        """
+        if not decisions:
+            return "No decisions to reflect on."
+        
+        # Helper to get attribute from dict or object
+        def get_attr(d, key, default=None):
+            if isinstance(d, dict):
+                return d.get(key, default)
+            return getattr(d, key, default)
+        
+        # Aggregate stats
+        total = len(decisions)
+        auto_approved = sum(1 for d in decisions if get_attr(d, 'action') in ('auto_approved', DecisionAction.AUTO_APPROVED))
+        escalated = sum(1 for d in decisions if get_attr(d, 'action') in ('escalated', DecisionAction.ESCALATED))
+        avg_risk = sum(get_attr(d, 'risk_score', 0) or 0 for d in decisions) / total
+        avg_confidence = sum(get_attr(d, 'confidence', 0) or 0 for d in decisions) / total
+        
+        prompt = f"""Reflect on your recent decision-making performance as an autonomous auditor agent.
+
+DECISIONS MADE: {total}
+- Auto-Approved: {auto_approved} ({auto_approved/total*100:.1f}%)
+- Escalated: {escalated} ({escalated/total*100:.1f}%)
+- Pending Review: {total - auto_approved - escalated}
+
+METRICS:
+- Average Risk Score: {avg_risk:.2f}
+- Average Confidence: {avg_confidence:.2f}
+
+YOUR GOALS:
+1. Maximize accuracy
+2. Minimize false positives
+3. Ensure high-risk items are escalated
+
+REFLECTION QUESTIONS:
+1. Is my auto-approval rate appropriate?
+2. Am I being too conservative or too lenient?
+3. What patterns do I notice?
+4. What should I do differently?
+
+Provide specific, actionable insights.
+"""
+        
+        reflection = await self._call_llm(prompt, temperature=0.7)
+        
+        # Store reflection
+        self.reflection_insights.append({
+            "timestamp": datetime.utcnow().isoformat(),
+            "decisions_analyzed": total,
+            "insight": reflection
+        })
+        
+        # Update performance metrics
+        self.performance_metrics["auto_approve_rate"] = auto_approved / total
+        self.performance_metrics["avg_risk"] = avg_risk
+        self.performance_metrics["avg_confidence"] = avg_confidence
+        
+        return reflection
