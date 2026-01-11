@@ -1431,6 +1431,251 @@ def render_history_tab():
         st.info("Make sure the database is initialized. Run: `python -m scripts.init_db --seed`")
 
 
+def render_agentic_tab():
+    """Render the Agentic AI dashboard tab."""
+    st.header("🤖 Agentic AI Dashboard")
+    st.markdown("""
+    This tab shows the **autonomous AI agent** capabilities - how agents think, 
+    communicate, and learn.
+    """)
+    
+    if not st.session_state.pipeline_result:
+        st.info("Run the pipeline to see agentic AI in action!")
+        
+        # Show agent architecture
+        st.subheader("🏗️ Agent Architecture")
+        st.markdown("""
+        ```
+        ┌─────────────────────────────────────────────────────────────┐
+        │                    SUPERVISOR AGENT                         │
+        │            (Monitors, enforces policies)                    │
+        └─────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+        ┌─────────────────────────────────────────────────────────────┐
+        │                   COORDINATOR AGENT                         │
+        │         (Plans, delegates, tracks goals)                    │
+        └─────────────────────────────────────────────────────────────┘
+                                    │
+                ┌───────────────────┼───────────────────┐
+                ▼                   ▼                   ▼
+        ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+        │  INGESTION  │ ──► │  VALIDATION │ ──► │  VARIANCE   │
+        │    AGENT    │     │    AGENT    │     │    AGENT    │
+        └─────────────┘     └─────────────┘     └─────────────┘
+                                    │
+                                    ▼
+                            ┌─────────────┐
+                            │  DECISION   │
+                            │    AGENT    │
+                            └─────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+            ┌─────────────┐                 ┌─────────────┐
+            │  LEARNING   │                 │   MEMORY    │
+            │    AGENT    │                 │    STORE    │
+            └─────────────┘                 └─────────────┘
+        ```
+        """)
+        
+        # Show agentic capabilities
+        st.subheader("🧠 Agentic Capabilities")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **Goal-Driven Behavior**
+            - Each agent has explicit goals
+            - Decisions optimize toward goals
+            - Progress tracked automatically
+            
+            **Beliefs & World Model**
+            - Agents maintain beliefs about data
+            - Confidence levels for each belief
+            - Updated based on evidence
+            """)
+        
+        with col2:
+            st.markdown("""
+            **Inter-Agent Communication**
+            - Agents send messages to each other
+            - Priority-based message handling
+            - Alerts for critical issues
+            
+            **Self-Reflection**
+            - Agents reflect on performance
+            - Identify areas for improvement
+            - Learn from mistakes
+            """)
+        
+        return
+    
+    # Show agent states from pipeline result
+    result = st.session_state.pipeline_result
+    
+    # Agent Status Section
+    st.subheader("📊 Agent Status")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    agents_info = [
+        ("🔍 Ingestion", "ingestion", "Parses data"),
+        ("✅ Validation", "validation", "Checks rules"),
+        ("📈 Variance", "variance", "Detects anomalies"),
+        ("🎯 Decision", "decision", "Makes decisions")
+    ]
+    
+    for i, (icon_name, agent_key, desc) in enumerate(agents_info):
+        with [col1, col2, col3, col4][i]:
+            agent_result = result.get("agents", {}).get(agent_key, {})
+            success = agent_result.get("success", False)
+            
+            st.metric(
+                label=icon_name,
+                value="✓ Active" if success else "○ Idle",
+                delta=desc
+            )
+    
+    # AI Reasoning Section
+    st.subheader("🧠 AI Reasoning Examples")
+    
+    decision_result = result.get("agents", {}).get("decision", {}).get("result", {})
+    decisions = decision_result.get("decisions", [])
+    
+    if decisions:
+        # Show sample AI-reasoned decisions
+        st.markdown("**Sample AI Decision Reasoning:**")
+        
+        for i, decision in enumerate(decisions[:3]):
+            with st.expander(f"Account: {decision.get('account_id', 'Unknown')[:20]}..."):
+                st.markdown(f"**Action:** `{decision.get('action', 'unknown')}`")
+                st.markdown(f"**Risk Score:** {decision.get('risk_score', 0):.2f}")
+                st.markdown(f"**Confidence:** {decision.get('confidence', 0):.2f}")
+                
+                rationale = decision.get("rationale", "No rationale available")
+                st.markdown(f"**AI Rationale:**")
+                st.info(rationale)
+                
+                evidence = decision.get("evidence_pack", {})
+                if evidence:
+                    st.markdown("**Evidence Pack:**")
+                    st.json(evidence)
+    
+    # Goals Section
+    st.subheader("🎯 Agent Goals")
+    
+    goals_data = [
+        {"Agent": "Decision", "Goal": "Maximize accuracy of approval decisions", "Priority": 0.9, "Status": "Active"},
+        {"Agent": "Decision", "Goal": "Minimize false positives", "Priority": 0.7, "Status": "Active"},
+        {"Agent": "Variance", "Goal": "Detect all significant variances", "Priority": 0.9, "Status": "Active"},
+        {"Agent": "Learning", "Goal": "Learn from human feedback", "Priority": 0.9, "Status": "Active"},
+        {"Agent": "Supervisor", "Goal": "Ensure policy compliance", "Priority": 0.95, "Status": "Active"}
+    ]
+    
+    goals_df = pd.DataFrame(goals_data)
+    st.dataframe(goals_df, use_container_width=True, hide_index=True)
+    
+    # Inter-Agent Communication
+    st.subheader("💬 Inter-Agent Communication")
+    
+    # Simulated messages based on pipeline results
+    variance_result = result.get("agents", {}).get("variance", {}).get("result", {})
+    anomaly_count = len(variance_result.get("anomalies", []))
+    
+    messages = [
+        {
+            "From": "Ingestion Agent",
+            "To": "Validation Agent",
+            "Type": "data_ready",
+            "Content": f"Parsed {len(result.get('agents', {}).get('ingestion', {}).get('result', {}).get('accounts', []))} accounts",
+            "Priority": "Normal"
+        },
+        {
+            "From": "Variance Agent",
+            "To": "Decision Agent",
+            "Type": "anomaly_alert",
+            "Content": f"Detected {anomaly_count} anomalies requiring review",
+            "Priority": "High" if anomaly_count > 5 else "Normal"
+        },
+        {
+            "From": "Decision Agent",
+            "To": "Learning Agent",
+            "Type": "decisions_complete",
+            "Content": f"Made {len(decisions)} decisions, ready for feedback",
+            "Priority": "Normal"
+        }
+    ]
+    
+    messages_df = pd.DataFrame(messages)
+    st.dataframe(messages_df, use_container_width=True, hide_index=True)
+    
+    # Beliefs Section
+    st.subheader("💭 Agent Beliefs (World Model)")
+    
+    beliefs_data = [
+        {"Agent": "Variance", "Belief": "anomaly_rate", "Value": f"{anomaly_count/max(len(decisions),1)*100:.1f}%", "Confidence": "90%"},
+        {"Agent": "Decision", "Belief": "data_quality", "Value": "Good", "Confidence": "85%"},
+        {"Agent": "Decision", "Belief": "conservative_mode", "Value": "False", "Confidence": "90%"},
+        {"Agent": "Learning", "Belief": "current_accuracy", "Value": "Estimating...", "Confidence": "50%"}
+    ]
+    
+    beliefs_df = pd.DataFrame(beliefs_data)
+    st.dataframe(beliefs_df, use_container_width=True, hide_index=True)
+    
+    # Reflection Section
+    st.subheader("🔮 Agent Self-Reflection")
+    
+    st.markdown("""
+    Agents periodically reflect on their performance and suggest improvements.
+    """)
+    
+    if st.button("🧠 Trigger Agent Reflection", key="reflect_btn"):
+        with st.spinner("Agents are reflecting on their performance..."):
+            # Get decision agent and trigger reflection
+            orchestrator = st.session_state.orchestrator
+            decision_agent = orchestrator.decision_agent
+            
+            # Run reflection
+            try:
+                reflection = run_async(decision_agent.reflect_on_decisions(
+                    [d for d in decisions[:20]]  # Use first 20 decisions
+                ))
+                
+                st.success("Reflection complete!")
+                st.markdown("**Decision Agent Reflection:**")
+                st.info(reflection if reflection else "No reflection generated - LLM may not be configured.")
+            except Exception as e:
+                st.error(f"Reflection failed: {str(e)}")
+    
+    # Summary metrics
+    st.subheader("📈 Agentic Metrics")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label="Total Agent Runs",
+            value=len(result.get("agents", {})),
+            delta="This session"
+        )
+    
+    with col2:
+        st.metric(
+            label="Messages Exchanged",
+            value=len(messages),
+            delta="Inter-agent"
+        )
+    
+    with col3:
+        st.metric(
+            label="Goals Active",
+            value=len(goals_data),
+            delta="Across all agents"
+        )
+
+
 def main():
     """Main application."""
     render_header()
@@ -1442,6 +1687,7 @@ def main():
         "✅ Validations",
         "📈 Variance",
         "🎯 Decisions",
+        "🤖 Agentic AI",
         "📝 Audit Log",
         "🧠 Learning",
         "📋 Data",
@@ -1461,15 +1707,18 @@ def main():
         render_decisions_tab()
     
     with tabs[4]:
-        render_audit_tab()
+        render_agentic_tab()
     
     with tabs[5]:
-        render_learning_tab()
+        render_audit_tab()
     
     with tabs[6]:
-        render_data_tab()
+        render_learning_tab()
     
     with tabs[7]:
+        render_data_tab()
+    
+    with tabs[8]:
         render_history_tab()
 
 
