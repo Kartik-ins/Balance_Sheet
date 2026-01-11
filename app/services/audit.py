@@ -2,6 +2,7 @@
 Audit Service
 =============
 Manages immutable audit logging and evidence tracking for the assurance platform.
+Now with database persistence.
 """
 from datetime import datetime
 from typing import Any, Optional
@@ -10,6 +11,8 @@ from pathlib import Path
 import structlog
 
 from app.models import AuditEvent, AgentType
+from app.models.database import AuditLogModel, DecisionModel, FeedbackModel
+from app.services.db import get_db
 
 
 class AuditService:
@@ -17,7 +20,7 @@ class AuditService:
     Service for managing audit logs and evidence.
     
     Features:
-    - Immutable event logging
+    - Immutable event logging (persisted to database)
     - Evidence pack management
     - Query and retrieval
     - Export capabilities
@@ -28,9 +31,37 @@ class AuditService:
         self.storage_path = Path(storage_path) if storage_path else Path("./data/audit")
         self.storage_path.mkdir(parents=True, exist_ok=True)
         
-        # In-memory index for fast queries
+        # In-memory cache for fast queries (backed by DB)
         self._events: list[AuditEvent] = []
         self._evidence_store: dict[str, dict] = {}
+        
+        # Load recent events from database
+        self._load_from_db()
+    
+    def _load_from_db(self):
+        """Load recent events from database into memory cache."""
+        try:
+            with get_db() as db:
+                recent_logs = db.query(AuditLogModel).order_by(
+                    AuditLogModel.created_at.desc()
+                ).limit(1000).all()
+                
+                for log in reversed(recent_logs):
+                    event = AuditEvent(
+                        id=log.id,
+                        event_type=log.event_type,
+                        agent_type=AgentType(log.agent_name) if log.agent_name else None,
+                        entity_id=log.entity_id,
+                        period_id=log.period_id,
+                        account_id=log.account_code,
+                        payload=log.details or {},
+                        timestamp=log.created_at
+                    )
+                    self._events.append(event)
+                
+                self.logger.info("audit_events_loaded", count=len(recent_logs))
+        except Exception as e:
+            self.logger.warning("failed_to_load_audit_events", error=str(e))
     
     def log_event(
         self,
@@ -40,9 +71,10 @@ class AuditService:
         entity_id: Optional[str] = None,
         period_id: Optional[str] = None,
         account_id: Optional[str] = None,
-        version_refs: Optional[dict[str, str]] = None
+        version_refs: Optional[dict[str, str]] = None,
+        user_id: Optional[str] = None
     ) -> AuditEvent:
-        """Log an immutable audit event."""
+        """Log an immutable audit event to database."""
         event = AuditEvent(
             event_type=event_type,
             agent_type=agent_type,
@@ -54,7 +86,29 @@ class AuditService:
             timestamp=datetime.utcnow()
         )
         
+        # Persist to database
+        try:
+            with get_db() as db:
+                db_log = AuditLogModel(
+                    id=event.id,
+                    event_type=event_type,
+                    agent_name=agent_type.value if agent_type else None,
+                    entity_id=entity_id,
+                    period_id=period_id,
+                    account_code=account_id,
+                    action=payload.get("action"),
+                    details=payload,
+                    user_id=user_id,
+                    created_at=event.timestamp
+                )
+                db.add(db_log)
+        except Exception as e:
+            self.logger.error("failed_to_persist_audit", error=str(e))
+        
+        # Add to in-memory cache
         self._events.append(event)
+        
+        # Also persist to file for backup
         self._persist_event(event)
         
         self.logger.info(

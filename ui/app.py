@@ -19,7 +19,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.agents import AgentOrchestrator
 from app.models import Entity, Period, Balance, Feedback, FeedbackType, DecisionAction
-from app.services import get_audit_service, get_explanation_service
+from app.services import get_audit_service, get_explanation_service, init_db, get_db
+from app.models.database import (
+    EntityModel, PeriodModel, BalanceModel, DecisionModel, 
+    AuditLogModel, FeedbackModel, PeriodStatus
+)
+
+# Initialize database on startup
+init_db()
 
 # Page config
 st.set_page_config(
@@ -402,14 +409,17 @@ def render_overview_tab():
             st.plotly_chart(fig, use_container_width=True)
         
         # Stats table
-        st.markdown(f"""
-        | Status | Count | Percentage |
-        |--------|-------|------------|
-        | ✅ Auto-Approved | {auto_approved} | {auto_approved/total*100:.1f}% |
-        | 🔴 Escalated | {escalated} | {escalated/total*100:.1f}% |
-        | 🟡 Pending Review | {pending} | {pending/total*100:.1f}% |
-        | **Total** | **{total}** | **100%** |
-        """)
+        if total > 0:
+            st.markdown(f"""
+            | Status | Count | Percentage |
+            |--------|-------|------------|
+            | ✅ Auto-Approved | {auto_approved} | {auto_approved/total*100:.1f}% |
+            | 🔴 Escalated | {escalated} | {escalated/total*100:.1f}% |
+            | 🟡 Pending Review | {pending} | {pending/total*100:.1f}% |
+            | **Total** | **{total}** | **100%** |
+            """)
+        else:
+            st.info("No decisions made yet.")
     
     with col2:
         st.subheader("🤖 Agent Execution")
@@ -702,78 +712,192 @@ def render_decisions_tab():
                 if feedback_key in st.session_state.feedback_submitted:
                     st.success(f"✅ Feedback submitted: {st.session_state.feedback_submitted[feedback_key]}")
                 else:
+                    reason = st.text_area("Reason for your decision", key=f"reason_{decision_id}", 
+                                         placeholder="e.g., Historical pattern supports this variance - seasonal Q4 increase is normal")
+                    
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        if st.button("✅ Approve", key=f"approve_{decision_id}"):
-                            submit_feedback(decision_id, "approved")
-                            st.session_state.feedback_submitted[feedback_key] = "Approved"
-                            st.rerun()
+                        if st.button("✅ Approve", key=f"approve_{decision_id}", type="primary"):
+                            if reason.strip():
+                                submit_feedback(decision_id, "override_approved", reason, decision, i)
+                                st.session_state.feedback_submitted[feedback_key] = "Approved"
+                                st.rerun()
+                            else:
+                                st.warning("Please provide a reason for approval")
                     
                     with col2:
                         if st.button("❌ Reject", key=f"reject_{decision_id}"):
-                            submit_feedback(decision_id, "rejected")
-                            st.session_state.feedback_submitted[feedback_key] = "Rejected"
-                            st.rerun()
-                    
-                    reason = st.text_input("Reason (optional)", key=f"reason_{decision_id}")
+                            if reason.strip():
+                                submit_feedback(decision_id, "override_rejected", reason, decision, i)
+                                st.session_state.feedback_submitted[feedback_key] = "Rejected"
+                                st.rerun()
+                            else:
+                                st.warning("Please provide a reason for rejection")
 
 
-def submit_feedback(decision_id: str, feedback_type: str, reason: str = None):
-    """Submit feedback for a decision."""
+def submit_feedback(decision_id: str, feedback_type: str, reason: str, decision: dict, decision_idx: int):
+    """Submit feedback for a decision and update status."""
     try:
+        # Determine if this is an override
+        original_action = decision.get("action", "")
+        is_override = feedback_type in ["override_approved", "override_rejected"]
+        
         feedback = {
             "decision_id": decision_id,
             "user_id": "streamlit_user",
             "feedback_type": feedback_type,
-            "reason": reason
+            "reason": reason,
+            "was_override": is_override,
+            "original_action": original_action
         }
         
+        # Process through orchestrator
         run_async(
             st.session_state.orchestrator.process_feedback(feedback)
         )
         
-        st.success("Feedback submitted!")
+        # Also save directly to database
+        try:
+            with get_db() as db:
+                import uuid
+                
+                # Save feedback
+                fb = FeedbackModel(
+                    id=str(uuid.uuid4()),
+                    decision_id=decision_id,
+                    user_id="streamlit_user",
+                    feedback_type=feedback_type,
+                    reason=reason,
+                    was_override=is_override,
+                    original_action=original_action,
+                    created_at=datetime.utcnow()
+                )
+                db.add(fb)
+                
+                # Update decision status in session state
+                if st.session_state.pipeline_result:
+                    decisions = st.session_state.pipeline_result.get("agents", {}).get("decision", {}).get("result", {}).get("decisions", [])
+                    if decision_idx < len(decisions):
+                        if feedback_type == "override_approved":
+                            decisions[decision_idx]["action"] = "auto_approved"
+                            decisions[decision_idx]["reviewed"] = True
+                        elif feedback_type == "override_rejected":
+                            decisions[decision_idx]["action"] = "rejected"
+                            decisions[decision_idx]["reviewed"] = True
+                
+                db.commit()
+                st.toast(f"✅ Feedback saved to database: {feedback_type}")
+        except Exception as db_error:
+            st.warning(f"Feedback recorded in session but DB save failed: {db_error}")
+            import traceback
+            st.error(f"Details: {traceback.format_exc()}")
+        
+        st.success(f"Feedback submitted: {feedback_type}")
     except Exception as e:
         st.error(f"Failed to submit feedback: {e}")
 
 
 def render_audit_tab():
-    """Render the audit log tab."""
-    result = st.session_state.pipeline_result
-    if not result:
-        st.info("Run the pipeline first to see audit logs.")
-        return
-    
-    audit_log = result.get("audit_log", [])
-    
+    """Render the audit log tab with both session and database events."""
     st.subheader("📝 Audit Trail")
-    st.write(f"Total events: {len(audit_log)}")
     
-    if not audit_log:
-        st.info("No audit events recorded.")
+    # Combine session audit log with database records
+    all_events = []
+    
+    # Get current session events
+    result = st.session_state.pipeline_result
+    if result:
+        session_events = result.get("audit_log", [])
+        for event in session_events:
+            all_events.append({
+                "source": "session",
+                "timestamp": event.get("timestamp", ""),
+                "event_type": event.get("event_type", ""),
+                "agent": event.get("agent_type", ""),
+                "entity_id": event.get("entity_id", ""),
+                "period_id": event.get("period_id", ""),
+                "account_id": event.get("account_id", ""),
+                "payload": event.get("payload", {})
+            })
+    
+    # Get database events
+    try:
+        with get_db() as db:
+            db_logs = db.query(AuditLogModel).order_by(
+                AuditLogModel.created_at.desc()
+            ).limit(200).all()
+            
+            for log in db_logs:
+                all_events.append({
+                    "source": "database",
+                    "timestamp": log.created_at.isoformat() if log.created_at else "",
+                    "event_type": log.event_type,
+                    "agent": log.agent_name or "",
+                    "entity_id": log.entity_id or "",
+                    "period_id": log.period_id or "",
+                    "account_id": log.account_code or "",
+                    "payload": log.details or {}
+                })
+    except Exception as e:
+        st.warning(f"Could not load database audit logs: {e}")
+    
+    # Stats
+    col1, col2, col3 = st.columns(3)
+    session_count = len([e for e in all_events if e["source"] == "session"])
+    db_count = len([e for e in all_events if e["source"] == "database"])
+    
+    with col1:
+        st.metric("Session Events", session_count)
+    with col2:
+        st.metric("Historical Events", db_count)
+    with col3:
+        st.metric("Total Events", len(all_events))
+    
+    if not all_events:
+        st.info("No audit events recorded. Run the pipeline or initialize the database with sample data.")
         return
     
     # Convert to DataFrame
     df_data = []
-    for event in audit_log:
+    for event in all_events:
+        entity_display = event.get("entity_id", "")
+        if entity_display and len(entity_display) > 8:
+            entity_display = entity_display[:8] + "..."
+            
         df_data.append({
             "Timestamp": event.get("timestamp", ""),
             "Event Type": event.get("event_type", ""),
-            "Agent": event.get("agent_type", ""),
-            "Entity": event.get("entity_id", "")[:8] + "..." if event.get("entity_id") else "",
-            "Account": event.get("account_id", ""),
+            "Agent": event.get("agent", ""),
+            "Entity": entity_display,
+            "Account": event.get("account_id", "") or "-",
+            "Source": "🔵 Live" if event.get("source") == "session" else "💾 DB",
         })
     
     df = pd.DataFrame(df_data)
     
-    # Filter
-    event_types = df["Event Type"].unique().tolist()
-    selected_types = st.multiselect("Filter by Event Type", event_types, default=event_types)
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        event_types = sorted(df["Event Type"].unique().tolist())
+        selected_types = st.multiselect("Filter by Event Type", event_types, default=event_types[:10] if len(event_types) > 10 else event_types)
+    with col2:
+        agents = sorted(df["Agent"].unique().tolist())
+        selected_agents = st.multiselect("Filter by Agent", agents, default=agents)
     
-    filtered_df = df[df["Event Type"].isin(selected_types)]
+    filtered_df = df[
+        (df["Event Type"].isin(selected_types)) & 
+        (df["Agent"].isin(selected_agents))
+    ]
     
     st.dataframe(filtered_df, use_container_width=True, height=400)
+    
+    # Event details expander
+    with st.expander("🔍 View Event Details"):
+        if len(all_events) > 0:
+            selected_idx = st.number_input("Event Index", min_value=0, max_value=len(all_events)-1, value=0)
+            event = all_events[selected_idx]
+            st.json(event)
     
     # Export option
     if st.button("📥 Export Audit Log"):
@@ -787,76 +911,258 @@ def render_audit_tab():
 
 
 def render_learning_tab():
-    """Render the learning insights tab."""
+    """Render the learning insights tab with database-backed metrics."""
     st.subheader("🧠 Learning Insights")
     
-    if not st.session_state.pipeline_result:
-        st.info("Run the pipeline and submit feedback to see learning insights.")
-        return
+    # Refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh Data", key="refresh_learning"):
+            st.rerun()
     
-    # Get learning insights
+    # Load feedback and decision data from database
+    feedback_data = []
+    decision_data = []
+    
     try:
-        insights = run_async(
-            st.session_state.orchestrator.get_learning_insights()
-        )
-        
-        if insights.get("success"):
-            result = insights.get("result", {})
-            metrics = result.get("metrics", {})
-            suggestions = result.get("suggestions", [])
+        with get_db() as db:
+            # Get all feedback
+            feedback_records = db.query(FeedbackModel).order_by(
+                FeedbackModel.created_at.desc()
+            ).limit(500).all()
             
-            # Metrics
-            col1, col2, col3, col4 = st.columns(4)
+            # Debug info
+            total_fb_count = db.query(FeedbackModel).count()
+            total_dec_count = db.query(DecisionModel).count()
             
-            with col1:
-                st.metric("Total Feedback", metrics.get("total_feedback", 0))
-            with col2:
-                st.metric("Override Rate", f"{metrics.get('override_rate', 0):.1%}")
-            with col3:
-                st.metric("Agreement Rate", f"{metrics.get('agreement_rate', 0):.1%}")
-            with col4:
-                accuracy = metrics.get("accuracy_estimate")
-                st.metric("Accuracy Estimate", f"{accuracy:.1%}" if accuracy else "N/A")
+            st.caption(f"📊 Database: {total_fb_count} feedback records, {total_dec_count} decisions")
             
-            st.divider()
+            for fb in feedback_records:
+                feedback_data.append({
+                    "id": fb.id,
+                    "decision_id": fb.decision_id,
+                    "user_id": fb.user_id,
+                    "feedback_type": fb.feedback_type,
+                    "reason": fb.reason,
+                    "was_override": fb.was_override,
+                    "original_action": fb.original_action,
+                    "created_at": fb.created_at
+                })
             
-            # Suggestions
-            st.subheader("💡 Improvement Suggestions")
+            # Get all decisions
+            decision_records = db.query(DecisionModel).order_by(
+                DecisionModel.created_at.desc()
+            ).limit(500).all()
             
-            if suggestions:
-                for suggestion in suggestions:
-                    stype = suggestion.get("type", "")
-                    
-                    if stype == "insufficient_data":
-                        st.info(f"📊 {suggestion.get('message', 'Need more data')}")
-                    elif stype == "threshold_adjustment":
-                        param = suggestion.get("parameter", "")
-                        current = suggestion.get("current_value", 0)
-                        suggested = suggestion.get("suggested_value", 0)
-                        reason = suggestion.get("reason", "")
-                        confidence = suggestion.get("confidence", 0)
-                        
-                        st.warning(f"""
-                        **Suggested Adjustment:** `{param}`
-                        - Current: {current:.2f} → Suggested: {suggested:.2f}
-                        - Reason: {reason}
-                        - Confidence: {confidence:.0%}
-                        """)
-            else:
-                st.success("No adjustments needed at this time.")
-            
-            # Threshold status
-            st.subheader("⚙️ Current Thresholds")
-            thresholds = metrics.get("suggested_thresholds", {})
-            
-            if thresholds:
-                for param, value in thresholds.items():
-                    st.write(f"- **{param}**: {value:.2f}")
-            else:
-                st.write("Using default thresholds.")
-                
+            for dec in decision_records:
+                decision_data.append({
+                    "id": dec.id,
+                    "account_code": dec.account_code,
+                    "action": dec.action,
+                    "risk_score": dec.risk_score,
+                    "confidence_score": dec.confidence_score,
+                    "rationale": dec.rationale,
+                    "created_at": dec.created_at
+                })
     except Exception as e:
-        st.error(f"Failed to get learning insights: {e}")
+        st.warning(f"Could not load data from database: {e}")
+    
+    # Calculate metrics from database data
+    total_feedback = len(feedback_data)
+    total_decisions = len(decision_data)
+    
+    overrides = [f for f in feedback_data if f.get("was_override")]
+    override_count = len(overrides)
+    override_rate = override_count / total_feedback if total_feedback > 0 else 0
+    
+    agreements = [f for f in feedback_data if f.get("feedback_type") in ("approved", "comment") and not f.get("was_override")]
+    agreement_rate = len(agreements) / total_feedback if total_feedback > 0 else 0
+    
+    # Accuracy estimate based on agreement rate
+    accuracy = 1 - override_rate if total_feedback >= 10 else None
+    
+    # Display metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Feedback", total_feedback)
+    with col2:
+        st.metric("Override Rate", f"{override_rate:.1%}")
+    with col3:
+        st.metric("Agreement Rate", f"{agreement_rate:.1%}")
+    with col4:
+        st.metric("Accuracy Estimate", f"{accuracy:.1%}" if accuracy else "N/A")
+    
+    st.divider()
+    
+    # Feedback breakdown
+    st.subheader("📊 Feedback Breakdown")
+    
+    if feedback_data:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Feedback type distribution
+            feedback_types = {}
+            for f in feedback_data:
+                ft = f.get("feedback_type", "unknown")
+                feedback_types[ft] = feedback_types.get(ft, 0) + 1
+            
+            type_df = pd.DataFrame([
+                {"Type": k, "Count": v} for k, v in feedback_types.items()
+            ])
+            
+            if not type_df.empty:
+                fig = px.pie(type_df, values='Count', names='Type', 
+                           title='Feedback by Type',
+                           color_discrete_sequence=px.colors.qualitative.Set2)
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Reviewer activity
+            reviewers = {}
+            for f in feedback_data:
+                user = f.get("user_id", "unknown")
+                reviewers[user] = reviewers.get(user, 0) + 1
+            
+            reviewer_df = pd.DataFrame([
+                {"Reviewer": k, "Reviews": v} for k, v in reviewers.items()
+            ])
+            
+            if not reviewer_df.empty:
+                fig = px.bar(reviewer_df, x='Reviewer', y='Reviews',
+                           title='Reviews by User',
+                           color='Reviews',
+                           color_continuous_scale='Blues')
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # Recent feedback table
+        st.subheader("📋 Recent Feedback")
+        recent_fb = feedback_data[:20]
+        
+        fb_df = pd.DataFrame([{
+            "Date": f.get("created_at").strftime("%Y-%m-%d %H:%M") if f.get("created_at") else "",
+            "User": f.get("user_id", ""),
+            "Type": f.get("feedback_type", ""),
+            "Override": "✓" if f.get("was_override") else "",
+            "Reason": (f.get("reason", "") or "")[:50] + "..." if len(f.get("reason", "") or "") > 50 else (f.get("reason", "") or "")
+        } for f in recent_fb])
+        
+        st.dataframe(fb_df, use_container_width=True, height=300)
+        
+    else:
+        st.info("📊 No feedback data available yet. Submit feedback on decisions to see learning insights.")
+    
+    st.divider()
+    
+    # Improvement Suggestions
+    st.subheader("💡 Improvement Suggestions")
+    
+    suggestions = []
+    
+    if total_feedback < 10:
+        suggestions.append({
+            "type": "insufficient_data",
+            "message": f"Need at least 10 feedback items to generate suggestions (currently {total_feedback})"
+        })
+    else:
+        if override_rate > 0.20:
+            suggestions.append({
+                "type": "threshold_adjustment",
+                "parameter": "risk_threshold",
+                "current_value": 0.7,
+                "suggested_value": 0.6,
+                "reason": f"High override rate ({override_rate:.1%}) suggests thresholds may be too strict",
+                "confidence": 0.75
+            })
+        
+        # Find accounts with repeated overrides
+        override_accounts = {}
+        for fb in overrides:
+            # Would need to join with decisions to get account
+            pass
+    
+    if suggestions:
+        for suggestion in suggestions:
+            stype = suggestion.get("type", "")
+            
+            if stype == "insufficient_data":
+                st.info(f"📊 {suggestion.get('message', 'Need more data')}")
+            elif stype == "threshold_adjustment":
+                param = suggestion.get("parameter", "")
+                current = suggestion.get("current_value", 0)
+                suggested = suggestion.get("suggested_value", 0)
+                reason = suggestion.get("reason", "")
+                confidence = suggestion.get("confidence", 0)
+                
+                st.warning(f"""
+                **Suggested Adjustment:** `{param}`
+                - Current: {current:.2f} → Suggested: {suggested:.2f}
+                - Reason: {reason}
+                - Confidence: {confidence:.0%}
+                """)
+    else:
+        st.success("✅ No adjustments needed at this time.")
+    
+    # Current thresholds
+    st.subheader("⚙️ Current Thresholds")
+    
+    thresholds = {
+        "variance_threshold_percent": 0.10,
+        "materiality_threshold_usd": 100000,
+        "risk_escalation_threshold": 0.70,
+        "auto_approve_confidence": 0.85,
+        "zscore_outlier_threshold": 2.5
+    }
+    
+    thresh_df = pd.DataFrame([
+        {"Parameter": k, "Value": f"{v:.2f}" if isinstance(v, float) and v < 100 else f"${v:,.0f}" if v > 100 else str(v)} 
+        for k, v in thresholds.items()
+    ])
+    
+    st.dataframe(thresh_df, use_container_width=True, hide_index=True)
+    
+    # Database debug section
+    with st.expander("🔧 Database Debug"):
+        try:
+            with get_db() as db:
+                st.write("**Table Record Counts:**")
+                counts = {
+                    "Entities": db.query(EntityModel).count(),
+                    "Periods": db.query(PeriodModel).count(),
+                    "Balances": db.query(BalanceModel).count(),
+                    "Decisions": db.query(DecisionModel).count(),
+                    "Audit Logs": db.query(AuditLogModel).count(),
+                    "Feedback": db.query(FeedbackModel).count(),
+                }
+                
+                count_df = pd.DataFrame([{"Table": k, "Count": v} for k, v in counts.items()])
+                st.dataframe(count_df, hide_index=True)
+                
+                # Recent feedback
+                st.write("**Recent Feedback Records:**")
+                recent_fb = db.query(FeedbackModel).order_by(FeedbackModel.created_at.desc()).limit(5).all()
+                if recent_fb:
+                    for fb in recent_fb:
+                        st.json({
+                            "id": fb.id[:8] + "...",
+                            "feedback_type": fb.feedback_type,
+                            "reason": (fb.reason or "")[:50],
+                            "was_override": fb.was_override,
+                            "created_at": str(fb.created_at)
+                        })
+                else:
+                    st.info("No feedback records in database")
+                    
+                if st.button("🗑️ Reset Database", type="secondary"):
+                    from app.services.db import drop_db, init_db
+                    drop_db()
+                    init_db()
+                    st.success("Database reset!")
+                    st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Debug error: {e}")
 
 
 def render_data_tab():
@@ -928,6 +1234,165 @@ def render_data_tab():
     )
 
 
+def render_history_tab():
+    """Render the database history tab with persisted data."""
+    st.subheader("🗄️ Database History")
+    
+    # Check if we need to seed the database BEFORE opening the main session
+    try:
+        needs_seed = False
+        with get_db() as db:
+            entity_count = db.query(EntityModel).count()
+            needs_seed = entity_count == 0
+        
+        if needs_seed:
+            st.info("No entities in database yet. Run an analysis to create records.")
+            
+            if st.button("📦 Initialize with Sample Data"):
+                st.info("Seeding database with comprehensive sample data...")
+                try:
+                    # Import and run the full seeding function (outside any db context)
+                    from scripts.init_db import seed_database
+                    seed_database()
+                    st.success("✅ Database seeded with sample entity, periods, balances, decisions, feedback, and audit logs!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to seed database: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+            return
+        
+        # Now open the main session for reading data
+        with get_db() as db:
+            # Get all entities
+            entities = db.query(EntityModel).all()
+            
+            # Entity selector
+            entity_options = {f"{e.code} - {e.name}": e.id for e in entities}
+            selected_entity = st.selectbox("Select Entity", list(entity_options.keys()))
+            entity_id = entity_options[selected_entity]
+            
+            # Get periods for this entity
+            periods = db.query(PeriodModel).filter(
+                PeriodModel.entity_id == entity_id
+            ).order_by(PeriodModel.end_date.desc()).all()
+            
+            if not periods:
+                st.warning("No periods found for this entity.")
+                return
+            
+            st.divider()
+            
+            # Period statistics
+            st.subheader("📅 Period History")
+            
+            period_data = []
+            for p in periods:
+                period_data.append({
+                    "Period": p.name,
+                    "Status": p.status,
+                    "Accounts": p.total_accounts,
+                    "Auto-Approved": p.auto_approved,
+                    "Escalated": p.escalated,
+                    "Pending": p.pending_review,
+                    "Avg Risk": f"{p.avg_risk_score:.2f}" if p.avg_risk_score else "N/A",
+                    "Created": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "N/A"
+                })
+            
+            df = pd.DataFrame(period_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Select period for details
+            period_options = {p.name: p.id for p in periods}
+            selected_period = st.selectbox("Select Period for Details", list(period_options.keys()))
+            period_id = period_options[selected_period]
+            
+            st.divider()
+            
+            # Balances for selected period
+            balances = db.query(BalanceModel).filter(
+                BalanceModel.period_id == period_id
+            ).all()
+            
+            if balances:
+                st.subheader(f"💰 Balances for {selected_period}")
+                
+                balance_data = []
+                for b in balances:
+                    balance_data.append({
+                        "Account": b.account_code,
+                        "Name": b.account_name[:40] + "..." if len(b.account_name) > 40 else b.account_name,
+                        "Type": b.account_type,
+                        "Debit": b.debit,
+                        "Credit": b.credit,
+                        "Net": b.net_balance,
+                        "Variance %": f"{b.variance_percent:.1%}" if b.variance_percent else "N/A",
+                        "Anomaly": "⚠️" if b.is_anomaly else ""
+                    })
+                
+                balance_df = pd.DataFrame(balance_data)
+                st.dataframe(
+                    balance_df,
+                    use_container_width=True,
+                    height=400,
+                    column_config={
+                        "Debit": st.column_config.NumberColumn(format="$%,.0f"),
+                        "Credit": st.column_config.NumberColumn(format="$%,.0f"),
+                        "Net": st.column_config.NumberColumn(format="$%,.0f"),
+                    }
+                )
+            
+            # Decisions for selected period
+            decisions = db.query(DecisionModel).filter(
+                DecisionModel.period_id == period_id
+            ).all()
+            
+            if decisions:
+                st.subheader(f"🎯 Decisions for {selected_period}")
+                
+                decision_data = []
+                for d in decisions:
+                    decision_data.append({
+                        "Account": d.account_code,
+                        "Action": d.action,
+                        "Risk Score": d.risk_score,
+                        "Confidence": d.confidence_score,
+                        "Reviewed By": d.reviewed_by or "-",
+                        "Created": d.created_at.strftime("%Y-%m-%d %H:%M") if d.created_at else "N/A"
+                    })
+                
+                decision_df = pd.DataFrame(decision_data)
+                st.dataframe(decision_df, use_container_width=True)
+            
+            # Audit logs
+            st.divider()
+            st.subheader("📜 Recent Audit Logs")
+            
+            logs = db.query(AuditLogModel).filter(
+                AuditLogModel.period_id == period_id
+            ).order_by(AuditLogModel.created_at.desc()).limit(50).all()
+            
+            if logs:
+                log_data = []
+                for log in logs:
+                    log_data.append({
+                        "Time": log.created_at.strftime("%H:%M:%S") if log.created_at else "",
+                        "Event": log.event_type,
+                        "Agent": log.agent_name or "-",
+                        "Account": log.account_code or "-",
+                        "Action": log.action or "-"
+                    })
+                
+                log_df = pd.DataFrame(log_data)
+                st.dataframe(log_df, use_container_width=True, height=300)
+            else:
+                st.info("No audit logs for this period.")
+                
+    except Exception as e:
+        st.error(f"Database error: {str(e)}")
+        st.info("Make sure the database is initialized. Run: `python -m scripts.init_db --seed`")
+
+
 def main():
     """Main application."""
     render_header()
@@ -941,7 +1406,8 @@ def main():
         "🎯 Decisions",
         "📝 Audit Log",
         "🧠 Learning",
-        "📋 Data"
+        "📋 Data",
+        "🗄️ History"
     ])
     
     with tabs[0]:
@@ -964,6 +1430,9 @@ def main():
     
     with tabs[6]:
         render_data_tab()
+    
+    with tabs[7]:
+        render_history_tab()
 
 
 if __name__ == "__main__":

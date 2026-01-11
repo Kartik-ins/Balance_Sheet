@@ -1,45 +1,194 @@
-account_code,account_name,account_type,debit,credit
-1010,Cash and Cash Equivalents,asset,2200000,0
-1020,Accounts Receivable,asset,1720000,0
-1030,Inventory,asset,2950000,0
-1040,Prepaid Expenses,asset,115000,0
-1050,Short-term Investments,asset,450000,0
-1510,Property Plant and Equipment,asset,8200000,0
-1520,Accumulated Depreciation,contra,0,1950000
-1530,Intangible Assets,asset,780000,0
-1540,Goodwill,asset,1200000,0
-2010,Accounts Payable,liability,0,1380000
-2020,Accrued Expenses,liability,0,290000
-2030,Short-term Debt,liability,0,600000
-2040,Deferred Revenue,liability,0,210000
-2050,Income Tax Payable,liability,0,88000
-2510,Long-term Debt,liability,0,3700000
-2520,Deferred Tax Liability,liability,0,410000
-2530,Other Long-term Liabilities,liability,0,145000
-3010,Common Stock,equity,0,1000000
-3020,Additional Paid-in Capital,equity,0,2500000
-3030,Retained Earnings,equity,0,4800000
-3040,Treasury Stock,equity,300000,0
-3050,Accumulated Other Comprehensive Income,equity,0,42000
-4010,Product Revenue,revenue,0,11800000
-4020,Service Revenue,revenue,0,2950000
-4030,Other Revenue,revenue,0,380000
-5010,Cost of Goods Sold,expense,8260000,0
-5020,Cost of Services,expense,1770000,0
-6010,Salaries and Wages,expense,1980000,0
-6020,Employee Benefits,expense,395000,0
-6030,Rent Expense,expense,360000,0
-6040,Utilities Expense,expense,78000,0
-6050,Insurance Expense,expense,115000,0
-6060,Depreciation Expense,expense,400000,0
-6070,Amortization Expense,expense,75000,0
-6080,Professional Services,expense,185000,0
-6090,Marketing and Advertising,expense,320000,0
-6100,Travel and Entertainment,expense,82000,0
-6110,Office Supplies,expense,42000,0
-6120,Telecommunications,expense,62000,0
-7010,Interest Expense,expense,185000,0
-7020,Interest Income,revenue,0,32000
-7030,Other Income,revenue,0,22000
-7040,Other Expenses,expense,48000,0
-8010,Income Tax Expense,expense,445000,0
+account_code,account_name,account_type,debit,credit,currency
+1010,Cash and Cash Equivalents,asset,4850000.00,0.00,USD
+1011,Petty Cash,asset,5000.00,0.00,USD
+1012,Cash in Transit,asset,98000.00,0.00,USD
+1020,Accounts Receivable - Trade,asset,2950000.00,0.00,USD
+1021,Accounts Receivable - Related Parties,asset,420000.00,0.00,USD
+1022,Accounts Receivable - Employees,asset,28000.00,0.00,USD
+1025,Allowance for Doubtful Accounts,asset,0.00,135000.00,USD
+1030,Inventory - Raw Materials,asset,1650000.00,0.00,USD
+1031,Inventory - Work in Progress,asset,580000.00,0.00,USD
+1032,Inventory - Finished Goods,asset,1280000.00,0.00,USD
+1033,Inventory - Spare Parts,asset,165000.00,0.00,USD
+1034,Inventory Reserve,asset,0.00,88000.00,USD
+1040,Prepaid Insurance,asset,310000.00,0.00,USD
+1041,Prepaid Rent,asset,120000.00,0.00,USD
+1042,Prepaid Subscriptions,asset,52000.00,0.00,USD
+1043,Other Prepaid Expenses,asset,78000.00,0.00,USD
+1050,Short-term Investments - Bonds,asset,750000.00,0.00,USD
+1051,Short-term Investments - Equities,asset,480000.00,0.00,USD
+1052,Money Market Funds,asset,320000.00,0.00,USD
+1060,Notes Receivable - Current,asset,250000.00,0.00,USD
+1070,Advances to Suppliers,asset,165000.00,0.00,USD
+1080,Security Deposits - Current,asset,45000.00,0.00,USD
+1090,Other Current Assets,asset,58000.00,0.00,USD
+1100,Land,asset,2500000.00,0.00,USD
+1101,Land Improvements,asset,450000.00,0.00,USD
+1110,Buildings,asset,8500000.00,0.00,USD
+1111,Accumulated Depreciation - Buildings,asset,0.00,1094000.00,USD
+1120,Machinery and Equipment,asset,4350000.00,0.00,USD
+1121,Accumulated Depreciation - Machinery,asset,0.00,1630000.00,USD
+1122,Computer Equipment,asset,620000.00,0.00,USD
+1123,Accumulated Depreciation - Computers,asset,0.00,366000.00,USD
+1130,Vehicles,asset,850000.00,0.00,USD
+1131,Accumulated Depreciation - Vehicles,asset,0.00,308000.00,USD
+1140,Furniture and Fixtures,asset,450000.00,0.00,USD
+1141,Accumulated Depreciation - Furniture,asset,0.00,158000.00,USD
+1150,Leasehold Improvements,asset,750000.00,0.00,USD
+1151,Accumulated Amortization - Leasehold,asset,0.00,206000.00,USD
+1160,Construction in Progress,asset,850000.00,0.00,USD
+1200,Patents,asset,1200000.00,0.00,USD
+1201,Accumulated Amortization - Patents,asset,0.00,240000.00,USD
+1210,Trademarks,asset,800000.00,0.00,USD
+1211,Accumulated Amortization - Trademarks,asset,0.00,100000.00,USD
+1220,Goodwill,asset,3500000.00,0.00,USD
+1230,Customer Relationships,asset,1500000.00,0.00,USD
+1231,Accumulated Amortization - Customer,asset,0.00,375000.00,USD
+1240,Software Development Costs,asset,580000.00,0.00,USD
+1241,Accumulated Amortization - Software,asset,0.00,290000.00,USD
+1300,Long-term Investments - Equities,asset,1700000.00,0.00,USD
+1310,Long-term Investments - Bonds,asset,1000000.00,0.00,USD
+1320,Investment in Subsidiaries,asset,2500000.00,0.00,USD
+1330,Investment in Associates,asset,850000.00,0.00,USD
+1400,Deferred Tax Assets - Current,asset,165000.00,0.00,USD
+1410,Deferred Tax Assets - Non-current,asset,185000.00,0.00,USD
+1500,Security Deposits - Long-term,asset,125000.00,0.00,USD
+1510,Long-term Notes Receivable,asset,500000.00,0.00,USD
+1520,Other Non-current Assets,asset,88000.00,0.00,USD
+2010,Accounts Payable - Trade,liability,0.00,1720000.00,USD
+2011,Accounts Payable - Related Parties,liability,0.00,255000.00,USD
+2020,Accrued Expenses,liability,0.00,485000.00,USD
+2021,Accrued Interest,liability,0.00,78000.00,USD
+2022,Accrued Utilities,liability,0.00,42000.00,USD
+2025,Accrued Payroll,liability,0.00,620000.00,USD
+2026,Accrued Bonuses,liability,0.00,285000.00,USD
+2027,Accrued Vacation,liability,0.00,165000.00,USD
+2030,Short-term Debt - Bank Loans,liability,0.00,500000.00,USD
+2031,Short-term Debt - Line of Credit,liability,0.00,280000.00,USD
+2040,Current Portion of Long-term Debt,liability,0.00,750000.00,USD
+2050,Income Tax Payable - Federal,liability,0.00,285000.00,USD
+2051,Income Tax Payable - State,liability,0.00,92000.00,USD
+2052,Payroll Taxes Payable,liability,0.00,132000.00,USD
+2053,Sales Tax Payable,liability,0.00,78000.00,USD
+2060,Unearned Revenue - Services,liability,0.00,320000.00,USD
+2061,Unearned Revenue - Subscriptions,liability,0.00,115000.00,USD
+2070,Customer Deposits,liability,0.00,138000.00,USD
+2080,Dividends Payable,liability,0.00,200000.00,USD
+2090,Current Lease Liabilities,liability,0.00,220000.00,USD
+2095,Other Current Liabilities,liability,0.00,88000.00,USD
+2100,Long-term Debt - Term Loan A,liability,0.00,4875000.00,USD
+2101,Long-term Debt - Term Loan B,liability,0.00,4250000.00,USD
+2110,Bonds Payable,liability,0.00,5000000.00,USD
+2111,Bond Premium,liability,0.00,131000.00,USD
+2120,Mortgage Payable,liability,0.00,3280000.00,USD
+2200,Deferred Tax Liabilities,liability,0.00,845000.00,USD
+2300,Pension Liability,liability,0.00,1380000.00,USD
+2310,Other Post-Employment Benefits,liability,0.00,365000.00,USD
+2400,Lease Liabilities - Non-current,liability,0.00,935000.00,USD
+2500,Asset Retirement Obligations,liability,0.00,245000.00,USD
+2510,Environmental Liabilities,liability,0.00,175000.00,USD
+2520,Contingent Liabilities,liability,0.00,500000.00,USD
+3010,Common Stock - Par Value,equity,0.00,500000.00,USD
+3011,Common Stock - APIC,equity,0.00,4500000.00,USD
+3020,Preferred Stock - Par Value,equity,0.00,100000.00,USD
+3021,Preferred Stock - APIC,equity,0.00,900000.00,USD
+3030,Additional Paid-in Capital - Options,equity,0.00,750000.00,USD
+3040,Retained Earnings,equity,0.00,7850000.00,USD
+3050,Treasury Stock,equity,450000.00,0.00,USD
+3060,Accumulated OCI - FX Translation,equity,0.00,105000.00,USD
+3061,Accumulated OCI - Unrealized Gains,equity,0.00,48000.00,USD
+4010,Product Sales - Domestic,revenue,0.00,20800000.00,USD
+4011,Product Sales - International,revenue,0.00,5400000.00,USD
+4020,Service Revenue - Consulting,revenue,0.00,4150000.00,USD
+4021,Service Revenue - Maintenance,revenue,0.00,2050000.00,USD
+4022,Service Revenue - Training,revenue,0.00,1380000.00,USD
+4030,Subscription Revenue - Monthly,revenue,0.00,1920000.00,USD
+4031,Subscription Revenue - Annual,revenue,0.00,1280000.00,USD
+4040,Licensing Revenue,revenue,0.00,1100000.00,USD
+4050,Royalty Revenue,revenue,0.00,420000.00,USD
+4100,Sales Returns,revenue,780000.00,0.00,USD
+4110,Sales Discounts,revenue,385000.00,0.00,USD
+4120,Sales Allowances,revenue,165000.00,0.00,USD
+4200,Interest Income - Bank,revenue,0.00,78000.00,USD
+4201,Interest Income - Investments,revenue,0.00,36000.00,USD
+4210,Dividend Income,revenue,0.00,78000.00,USD
+4220,Rental Income,revenue,0.00,120000.00,USD
+4300,Gain on Sale of Assets,revenue,0.00,85000.00,USD
+4310,Gain on Foreign Exchange,revenue,0.00,32000.00,USD
+4400,Other Revenue,revenue,0.00,255000.00,USD
+5010,COGS - Direct Materials,expense,9650000.00,0.00,USD
+5011,COGS - Material Variances,expense,165000.00,0.00,USD
+5012,COGS - Freight In,expense,385000.00,0.00,USD
+5020,COGS - Direct Labor,expense,3850000.00,0.00,USD
+5021,COGS - Overtime,expense,345000.00,0.00,USD
+5022,COGS - Temporary Labor,expense,195000.00,0.00,USD
+5030,COGS - Manufacturing Overhead,expense,1680000.00,0.00,USD
+5031,COGS - Utilities,expense,255000.00,0.00,USD
+5032,COGS - Depreciation,expense,425000.00,0.00,USD
+5040,COGS - Inventory Adjustments,expense,82000.00,0.00,USD
+6010,Salaries - Executive,expense,1100000.00,0.00,USD
+6011,Salaries - Management,expense,1650000.00,0.00,USD
+6012,Salaries - Staff,expense,2580000.00,0.00,USD
+6013,Salaries - Sales,expense,1380000.00,0.00,USD
+6020,Employee Benefits - Health,expense,785000.00,0.00,USD
+6021,Employee Benefits - 401k,expense,350000.00,0.00,USD
+6022,Employee Benefits - Other,expense,165000.00,0.00,USD
+6030,Payroll Tax Expense,expense,480000.00,0.00,USD
+6040,Stock Compensation Expense,expense,385000.00,0.00,USD
+6100,Rent Expense - Office,expense,720000.00,0.00,USD
+6101,Rent Expense - Warehouse,expense,240000.00,0.00,USD
+6110,Utilities - Electricity,expense,165000.00,0.00,USD
+6111,Utilities - Gas,expense,72000.00,0.00,USD
+6112,Utilities - Water,expense,32000.00,0.00,USD
+6120,Insurance - Property,expense,280000.00,0.00,USD
+6121,Insurance - Liability,expense,120000.00,0.00,USD
+6122,Insurance - Workers Comp,expense,78000.00,0.00,USD
+6130,Repairs and Maintenance - Building,expense,165000.00,0.00,USD
+6131,Repairs and Maintenance - Equipment,expense,138000.00,0.00,USD
+6132,Repairs and Maintenance - Vehicles,expense,45000.00,0.00,USD
+6200,Depreciation - Buildings,expense,425000.00,0.00,USD
+6201,Depreciation - Equipment,expense,620000.00,0.00,USD
+6202,Depreciation - Vehicles,expense,155000.00,0.00,USD
+6203,Depreciation - Furniture,expense,82000.00,0.00,USD
+6204,Depreciation - Computers,expense,195000.00,0.00,USD
+6210,Amortization - Intangibles,expense,295000.00,0.00,USD
+6211,Amortization - Leasehold,expense,68000.00,0.00,USD
+6300,Advertising - Digital,expense,580000.00,0.00,USD
+6301,Advertising - Print,expense,165000.00,0.00,USD
+6302,Advertising - Television,expense,255000.00,0.00,USD
+6303,Advertising - Radio,expense,82000.00,0.00,USD
+6310,Marketing - Events,expense,285000.00,0.00,USD
+6311,Marketing - Promotions,expense,255000.00,0.00,USD
+6312,Marketing - Content,expense,135000.00,0.00,USD
+6313,Marketing - Social Media,expense,88000.00,0.00,USD
+6400,Professional Fees - Consulting,expense,255000.00,0.00,USD
+6401,Professional Fees - IT Services,expense,125000.00,0.00,USD
+6410,Legal Fees,expense,255000.00,0.00,USD
+6420,Accounting and Audit Fees,expense,165000.00,0.00,USD
+6430,Tax Preparation Fees,expense,42000.00,0.00,USD
+6500,Office Supplies,expense,88000.00,0.00,USD
+6510,Postage and Shipping,expense,115000.00,0.00,USD
+6520,Telephone,expense,42000.00,0.00,USD
+6521,Internet and Data,expense,35000.00,0.00,USD
+6530,Software Subscriptions,expense,168000.00,0.00,USD
+6540,Printing and Reproduction,expense,32000.00,0.00,USD
+6600,Travel - Airfare,expense,165000.00,0.00,USD
+6601,Travel - Lodging,expense,88000.00,0.00,USD
+6602,Travel - Ground Transportation,expense,42000.00,0.00,USD
+6610,Meals and Entertainment,expense,78000.00,0.00,USD
+6620,Conference and Seminars,expense,58000.00,0.00,USD
+6700,Bad Debt Expense,expense,165000.00,0.00,USD
+6710,Collection Fees,expense,22000.00,0.00,USD
+6800,Interest Expense - Bank Loans,expense,395000.00,0.00,USD
+6801,Interest Expense - Bonds,expense,350000.00,0.00,USD
+6802,Interest Expense - Mortgage,expense,128000.00,0.00,USD
+6810,Bank Fees,expense,42000.00,0.00,USD
+6820,Finance Charges,expense,25000.00,0.00,USD
+6900,Income Tax Expense - Federal,expense,875000.00,0.00,USD
+6901,Income Tax Expense - State,expense,275000.00,0.00,USD
+6910,Deferred Tax Expense,expense,78000.00,0.00,USD
+6950,Charitable Contributions,expense,68000.00,0.00,USD
+6960,Licenses and Permits,expense,42000.00,0.00,USD
+6970,Dues and Memberships,expense,25000.00,0.00,USD
+6980,Loss on Disposal of Assets,expense,28000.00,0.00,USD
+6990,Other Operating Expenses,expense,108000.00,0.00,USD

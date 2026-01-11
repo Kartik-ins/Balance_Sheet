@@ -20,6 +20,7 @@ from app.models import (
     PipelineRun, TrialBalance
 )
 from app.config import get_settings
+from app.services.db import get_db
 
 
 class AgentOrchestrator:
@@ -126,6 +127,14 @@ class AgentOrchestrator:
             # Step 1: Ingestion
             # ================================================================
             self.logger.info("running_ingestion_agent")
+            
+            self._log_audit_event(
+                event_type="ingestion_started",
+                payload={"file_path": file_path, "has_dataframe": dataframe is not None},
+                entity_id=entity.id,
+                period_id=period.id
+            )
+            
             ingestion_result = await self.ingestion_agent.run({
                 "file_path": file_path,
                 "dataframe": dataframe,
@@ -148,10 +157,30 @@ class AgentOrchestrator:
                 for b in trial_balance["balances"]
             ]
             
+            self._log_audit_event(
+                event_type="ingestion_completed",
+                payload={
+                    "accounts_loaded": len(accounts),
+                    "balances_loaded": len(balances),
+                    "total_debits": sum(float(b.debit_amount or 0) for b in balances),
+                    "total_credits": sum(float(b.credit_amount or 0) for b in balances)
+                },
+                entity_id=entity.id,
+                period_id=period.id
+            )
+            
             # ================================================================
             # Step 2: Validation
             # ================================================================
             self.logger.info("running_validation_agent")
+            
+            self._log_audit_event(
+                event_type="validation_started",
+                payload={"accounts_to_validate": len(accounts)},
+                entity_id=entity.id,
+                period_id=period.id
+            )
+            
             validation_result = await self.validation_agent.run({
                 "trial_balance": trial_balance,
                 "accounts": accounts,
@@ -163,6 +192,18 @@ class AgentOrchestrator:
             self._record_agent_run("validation", validation_result)
             
             validation_findings = validation_result["result"].get("findings", [])
+            validation_results_data = validation_result["result"].get("validation_results", [])
+            
+            self._log_audit_event(
+                event_type="validation_completed",
+                payload={
+                    "total_checks": len(validation_results_data),
+                    "findings_count": len(validation_findings),
+                    "overall_score": validation_result["result"].get("validation_summary", {}).get("overall_score", 0)
+                },
+                entity_id=entity.id,
+                period_id=period.id
+            )
             
             # ================================================================
             # Step 3: Variance Analysis
@@ -170,6 +211,18 @@ class AgentOrchestrator:
             variance_result = None
             if prior_balances:
                 self.logger.info("running_variance_agent")
+                
+                self._log_audit_event(
+                    event_type="variance_started",
+                    payload={
+                        "current_balances": len(balances),
+                        "prior_balances": len(prior_balances),
+                        "prior_period": prior_period.name if prior_period else "unknown"
+                    },
+                    entity_id=entity.id,
+                    period_id=period.id
+                )
+                
                 variance_result = await self.variance_agent.run({
                     "current_balances": balances,
                     "prior_balances": prior_balances,
@@ -182,12 +235,33 @@ class AgentOrchestrator:
                 
                 results["agents"]["variance"] = variance_result
                 self._record_agent_run("variance", variance_result)
+                
+                self._log_audit_event(
+                    event_type="variance_completed",
+                    payload={
+                        "analyzed": len(variance_result.get("result", {}).get("variance_analyses", [])),
+                        "anomalies_detected": len([
+                            v for v in variance_result.get("result", {}).get("variance_analyses", [])
+                            if v.get("is_outlier")
+                        ]),
+                        "findings": len(variance_result.get("result", {}).get("findings", []))
+                    },
+                    entity_id=entity.id,
+                    period_id=period.id
+                )
             else:
                 self.logger.info("skipping_variance_agent", reason="no_prior_data")
                 results["agents"]["variance"] = {
                     "skipped": True,
                     "reason": "No prior period data provided"
                 }
+                
+                self._log_audit_event(
+                    event_type="variance_skipped",
+                    payload={"reason": "No prior period data available"},
+                    entity_id=entity.id,
+                    period_id=period.id
+                )
             
             variance_analyses = []
             variance_findings = []
@@ -200,6 +274,17 @@ class AgentOrchestrator:
             # ================================================================
             self.logger.info("running_decision_agent")
             all_findings = validation_findings + variance_findings
+            
+            self._log_audit_event(
+                event_type="decision_started",
+                payload={
+                    "accounts_to_process": len(balances),
+                    "total_findings": len(all_findings),
+                    "variance_analyses": len(variance_analyses)
+                },
+                entity_id=entity.id,
+                period_id=period.id
+            )
             
             decision_result = await self.decision_agent.run({
                 "balances": balances,
@@ -214,11 +299,53 @@ class AgentOrchestrator:
             results["agents"]["decision"] = decision_result
             self._record_agent_run("decision", decision_result)
             
+            # Log decision summary
+            if decision_result.get("success"):
+                dec_summary = decision_result["result"].get("summary", {})
+                decisions = decision_result["result"].get("decisions", [])
+                
+                self._log_audit_event(
+                    event_type="decision_completed",
+                    payload={
+                        "total_decisions": len(decisions),
+                        "auto_approved": dec_summary.get("auto_approved", 0),
+                        "escalated": dec_summary.get("escalated", 0),
+                        "pending_review": dec_summary.get("pending_review", 0),
+                        "auto_approve_rate": dec_summary.get("auto_approve_rate", 0),
+                        "average_risk": dec_summary.get("average_risk_score", 0)
+                    },
+                    entity_id=entity.id,
+                    period_id=period.id
+                )
+                
+                # Log individual high-risk decisions
+                high_risk = [d for d in decisions if d.get("risk_score", 0) > 0.7]
+                for dec in high_risk[:5]:  # Top 5 high risk
+                    self._log_audit_event(
+                        event_type="high_risk_decision",
+                        payload={
+                            "account_code": dec.get("account_id", ""),
+                            "action": dec.get("action", ""),
+                            "risk_score": dec.get("risk_score", 0),
+                            "rationale": dec.get("rationale", "")[:100]
+                        },
+                        entity_id=entity.id,
+                        period_id=period.id
+                    )
+            
             # ================================================================
             # Step 5: Record decisions for learning
             # ================================================================
             if decision_result.get("success"):
                 decisions = decision_result["result"].get("decisions", [])
+                
+                self._log_audit_event(
+                    event_type="learning_started",
+                    payload={"decisions_to_record": len(decisions)},
+                    entity_id=entity.id,
+                    period_id=period.id
+                )
+                
                 await self.learning_agent.run({
                     "decisions": decisions,
                     "analyze": False
@@ -247,6 +374,11 @@ class AgentOrchestrator:
                 run_id=run_id,
                 auto_approve_rate=results["summary"].get("auto_approve_rate")
             )
+            
+            # ================================================================
+            # Persist to Database
+            # ================================================================
+            self._persist_to_database(entity.id, period.id, results)
             
         except Exception as e:
             self.current_run.status = "failed"
@@ -408,3 +540,89 @@ class AgentOrchestrator:
         combined.sort(key=lambda x: x.get("timestamp", ""))
         
         return combined
+    
+    def _persist_to_database(
+        self,
+        entity_id: str,
+        period_id: str,
+        results: dict
+    ):
+        """
+        Persist pipeline results to database.
+        
+        Saves:
+        - Decisions made by the decision agent
+        - Audit log events
+        - Balance updates (anomaly flags, variance data)
+        """
+        try:
+            from app.models.database import (
+                EntityModel, PeriodModel, BalanceModel, 
+                DecisionModel, AuditLogModel
+            )
+            
+            with get_db() as db:
+                # Check if entity/period exist in DB, if not this is a demo run
+                period_exists = db.query(PeriodModel).filter(
+                    PeriodModel.id == period_id
+                ).first()
+                
+                # Only persist if we have a real DB period
+                if not period_exists:
+                    self.logger.info(
+                        "skipping_db_persistence",
+                        reason="demo_run_no_db_period",
+                        period_id=period_id
+                    )
+                    return
+                
+                # Persist decisions
+                decision_result = results.get("agents", {}).get("decision", {})
+                if decision_result.get("success"):
+                    decisions = decision_result.get("result", {}).get("decisions", [])
+                    
+                    for dec in decisions:
+                        decision_model = DecisionModel(
+                            id=dec.get("id") or str(uuid.uuid4()),
+                            period_id=period_id,
+                            account_code=dec.get("account_id", ""),
+                            account_name=dec.get("account_name", ""),
+                            action=dec.get("action", ""),
+                            risk_score=dec.get("risk_score", 0),
+                            confidence_score=dec.get("confidence_score", 0),
+                            rationale=dec.get("rationale", ""),
+                            factors=dec.get("factors", []),
+                            requires_review=dec.get("action") != "auto_approved",
+                            created_at=datetime.utcnow()
+                        )
+                        db.merge(decision_model)  # Use merge to update if exists
+                    
+                    self.logger.info(
+                        "persisted_decisions",
+                        count=len(decisions),
+                        period_id=period_id
+                    )
+                
+                # Persist audit logs
+                for event in self.audit_log:
+                    log_model = AuditLogModel(
+                        id=str(uuid.uuid4()),
+                        entity_id=entity_id if entity_id else None,
+                        period_id=period_id if period_id else None,
+                        event_type=event.event_type,
+                        agent_name=event.agent_type.value if event.agent_type else "orchestrator",
+                        details=event.payload,
+                        created_at=event.timestamp
+                    )
+                    db.add(log_model)
+                
+                db.commit()
+                self.logger.info(
+                    "db_persistence_complete",
+                    decisions=len(decision_result.get("result", {}).get("decisions", [])),
+                    audit_events=len(self.audit_log)
+                )
+                
+        except Exception as e:
+            self.logger.error("db_persistence_failed", error=str(e))
+            # Don't raise - persistence failure shouldn't fail the pipeline

@@ -4,7 +4,7 @@ Learning Agent
 Observes human overrides and feedback to continuously refine
 validation rules, thresholds, and decision logic.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 from collections import defaultdict
@@ -33,10 +33,67 @@ class LearningAgent(BaseAgent):
         super().__init__(AgentType.LEARNING)
         self.settings = get_settings()
         
-        # In-memory storage for learning data (would be persisted in production)
+        # In-memory storage for learning data (backed by DB)
         self.feedback_history: list[dict] = []
         self.decision_outcomes: dict[str, list[dict]] = defaultdict(list)
         self.threshold_suggestions: dict[str, float] = {}
+        
+        # Load from database on init
+        self._load_from_db()
+    
+    def _load_from_db(self):
+        """Load feedback and decisions from database."""
+        try:
+            from app.services.db import get_db
+            from app.models.database import FeedbackModel, DecisionModel
+            
+            with get_db() as db:
+                # Load recent feedback (last 90 days)
+                cutoff = datetime.utcnow() - timedelta(days=90)
+                feedback_records = db.query(FeedbackModel).filter(
+                    FeedbackModel.created_at >= cutoff
+                ).order_by(FeedbackModel.created_at.desc()).limit(500).all()
+                
+                for fb in feedback_records:
+                    self.feedback_history.append({
+                        "id": fb.id,
+                        "decision_id": fb.decision_id,
+                        "user_id": fb.user_id,
+                        "feedback_type": fb.feedback_type,
+                        "reason": fb.reason,
+                        "was_override": fb.was_override,
+                        "original_action": fb.original_action,
+                        "created_at": fb.created_at.isoformat() if fb.created_at else None,
+                        "processed_at": fb.created_at.isoformat() if fb.created_at else None
+                    })
+                
+                # Load recent decisions
+                decision_records = db.query(DecisionModel).filter(
+                    DecisionModel.created_at >= cutoff
+                ).order_by(DecisionModel.created_at.desc()).limit(1000).all()
+                
+                for dec in decision_records:
+                    self.decision_outcomes[dec.account_code].append({
+                        "id": dec.id,
+                        "account_code": dec.account_code,
+                        "action": dec.action,
+                        "risk_score": dec.risk_score,
+                        "confidence_score": dec.confidence_score,
+                        "rationale": dec.rationale,
+                        "created_at": dec.created_at.isoformat() if dec.created_at else None
+                    })
+                
+                self.log_audit_event(
+                    event_type="learning_data_loaded",
+                    payload={
+                        "feedback_loaded": len(self.feedback_history),
+                        "decisions_loaded": len(decision_records)
+                    }
+                )
+                
+        except Exception as e:
+            # If DB not available, continue with empty data
+            self.logger.warning("failed_to_load_learning_data", error=str(e))
     
     def validate_input(self, context: dict[str, Any]) -> bool:
         """Validate that required inputs are present."""
