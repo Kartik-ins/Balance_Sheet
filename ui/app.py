@@ -560,12 +560,27 @@ def render_variance_tab():
     # Convert to DataFrame for display
     df_data = []
     for va in variance_analyses:
+        # Get percent variance - it's stored as decimal (0.15 = 15%)
+        pct_var = va.get("percent_variance")
+        prior_amt = float(va.get("prior_amount", 0))
+        
+        # Calculate percentage for display
+        if pct_var is not None:
+            # Check if this is the edge case where prior was 0
+            if prior_amt == 0:
+                pct_display = None  # Can't calculate % when prior is 0
+            else:
+                # Convert decimal to percentage (0.15 -> 15.0)
+                pct_display = pct_var * 100
+        else:
+            pct_display = None
+            
         df_data.append({
             "Account": va.get("account_id"),
             "Current": float(va.get("current_amount", 0)),
-            "Prior": float(va.get("prior_amount", 0)),
+            "Prior": prior_amt,
             "Variance $": float(va.get("absolute_variance", 0)),
-            "Variance %": va.get("percent_variance"),
+            "Variance %": pct_display,
             "Z-Score": va.get("zscore"),
             "Anomaly": "⚠️ Yes" if va.get("is_anomaly") else "No",
             "Trend": va.get("trend_direction", "stable")
@@ -598,7 +613,7 @@ def render_variance_tab():
             "Current": st.column_config.NumberColumn(format="$%,.0f"),
             "Prior": st.column_config.NumberColumn(format="$%,.0f"),
             "Variance $": st.column_config.NumberColumn(format="$%,.0f"),
-            "Variance %": st.column_config.NumberColumn(format="%.1%%"),
+            "Variance %": st.column_config.NumberColumn(format="%.1f%%"),
             "Z-Score": st.column_config.NumberColumn(format="%.2f"),
         }
     )
@@ -696,12 +711,34 @@ def render_decisions_tab():
             st.write("**Rationale:**")
             st.info(rationale)
             
-            # Evidence (show as collapsible details without nested expander)
+            # Evidence (show key details, not raw JSON)
             evidence = decision.get("evidence_pack", {})
             if evidence:
                 st.write("**📋 Evidence:**")
-                with st.container():
-                    st.json(evidence)
+                count = 0
+                for key, value in evidence.items():
+                    if count >= 8:  # Limit to 8 items
+                        break
+                    if isinstance(value, dict):
+                        for sub_key, sub_val in value.items():
+                            if count >= 8:
+                                break
+                            # Format numbers nicely
+                            if isinstance(sub_val, (int, float)):
+                                st.markdown(f"• **{sub_key}**: {sub_val:,.2f}")
+                            else:
+                                st.markdown(f"• **{sub_key}**: {sub_val}")
+                            count += 1
+                    elif isinstance(value, list):
+                        st.markdown(f"• **{key}**: {len(value)} items")
+                        count += 1
+                    else:
+                        # Format numbers nicely
+                        if isinstance(value, (int, float)):
+                            st.markdown(f"• **{key}**: {value:,.2f}")
+                        else:
+                            st.markdown(f"• **{key}**: {value}")
+                        count += 1
             
             # Feedback form (only for escalated/pending)
             if action in ["escalated", "pending_review"]:

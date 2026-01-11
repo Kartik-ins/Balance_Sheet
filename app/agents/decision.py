@@ -204,12 +204,19 @@ class DecisionAgent(BaseAgent):
         
         # Variance risk (0-1)
         if variance:
+            pct_var = abs(variance.get("percent_variance") or 0)
+            zscore = abs(variance.get("zscore") or 0)
+            
             if variance.get("is_anomaly"):
-                zscore = abs(variance.get("zscore") or 0)
-                pct_var = abs(variance.get("percent_variance") or 0)
-                components["variance_risk"] = min(1.0, zscore / 5.0 + pct_var)
+                # Anomalies should have HIGH variance risk to trigger escalation
+                # Base risk of 0.7 for any anomaly, plus contributions from zscore/pct
+                components["variance_risk"] = min(1.0, 0.7 + zscore / 10.0 + pct_var / 2)
+            elif pct_var > 0.5:  # >50% variance without anomaly flag
+                components["variance_risk"] = min(1.0, 0.6 + pct_var * 0.3)
+            elif pct_var > 0.25:  # >25% variance
+                components["variance_risk"] = min(1.0, 0.4 + pct_var)
             else:
-                components["variance_risk"] = abs(variance.get("percent_variance") or 0) / 2
+                components["variance_risk"] = min(1.0, pct_var * 2)  # Scale up small variances
         else:
             components["variance_risk"] = 0.1  # Small risk for no comparison data
         
@@ -421,6 +428,16 @@ class DecisionAgent(BaseAgent):
                 f"Risk score: {risk:.2f}. Requires human review."
             )
         
+        # Check for variance anomalies - these should ALWAYS require review
+        if variance and variance.get("is_anomaly"):
+            pct_var = abs(variance.get("percent_variance") or 0)
+            zscore = abs(variance.get("zscore") or 0)
+            return (
+                DecisionAction.ESCALATED,
+                f"Variance anomaly detected: {pct_var*100:.1f}% change (z-score: {zscore:.2f}). "
+                f"Exceeds threshold. Requires human verification."
+            )
+        
         # Apply threshold-based decisions
         if risk >= self.settings.escalation_risk_threshold:
             # High risk - escalate
@@ -442,20 +459,21 @@ class DecisionAgent(BaseAgent):
                 f"All validation checks passed. Variance within normal ranges."
             )
         
-        elif confidence >= 0.7 and risk < 0.5:
-            # Moderate confidence and risk - auto-approve with note
-            if variance and variance.get("is_anomaly"):
-                return (
-                    DecisionAction.PENDING_REVIEW,
-                    f"Variance anomaly detected but within acceptable risk ({risk:.2f}). "
-                    f"Flagged for optional review."
-                )
-            else:
-                return (
-                    DecisionAction.AUTO_APPROVED,
-                    f"Auto-approved: Acceptable risk ({risk:.2f}) with adequate confidence ({confidence:.2f}). "
-                    f"No significant anomalies detected."
-                )
+        elif confidence >= 0.7 and risk < 0.4:
+            # Moderate confidence and LOW risk - auto-approve
+            # Note: Anomalies are already handled above, so if we get here there's no anomaly
+            return (
+                DecisionAction.AUTO_APPROVED,
+                f"Auto-approved: Acceptable risk ({risk:.2f}) with adequate confidence ({confidence:.2f}). "
+                f"No significant anomalies detected."
+            )
+        
+        elif risk < 0.5:
+            # Borderline risk - pending review
+            return (
+                DecisionAction.PENDING_REVIEW,
+                f"Pending review: Risk ({risk:.2f}) is borderline. Human verification recommended."
+            )
         
         else:
             # Low confidence or borderline risk - pending review

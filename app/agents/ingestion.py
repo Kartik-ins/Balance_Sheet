@@ -266,9 +266,9 @@ class IngestionAgent(BaseAgent):
                     )
                     accounts[account_code] = account
                 
-                # Create balance
+                # Create balance - use account CODE as account_id for period matching
                 balance = Balance(
-                    account_id=accounts[account_code].id,
+                    account_id=account_code,  # Use code, not UUID, for variance matching
                     period_id=period_id,
                     entity_id=entity_id,
                     debit_amount=debit,
